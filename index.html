@@ -774,6 +774,7 @@ function mktHtml(i){
     const price=typeof src==="object"&&isNum(src.price)?` · ${fmtY(src.price)}`:"";
     return `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(title)}${price} ↗</a>`;
   }).filter(Boolean).join("");
+  const isSoldAverage=m?.soldMetric==="average" || /^Ø\\s*¥/i.test(m?.sold||"");
   const hasPrices=m&&(isNum(m.low)||isNum(m.good)||isNum(m.high));
   return `<div class="mkt">
     <div class="mhead"><span class="lbl">Japan-Preisrecherche${m?.date?" · "+esc(fmtDate(m.date)):""}</span>${m&&m.qualityVersion!==4?`<span class="conf warn">Alte Recherche · bitte neu suchen</span>`:c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
@@ -782,7 +783,7 @@ function mktHtml(i){
     ${m?.shop?`<div class="mrow"><span class="mk">Aktuell angeboten</span><span>${esc(m.shop)}</span></div>`:""}
     ${m?.sold?`<div class="mrow"><span class="mk">Abgeschlossene Verkäufe</span><span>${esc(m.sold)}</span></div>`:""}
     ${hasPrices?`
-      ${m.soldMetric==="average"?`
+      ${isSoldAverage?`
         <div class="mrow"><span class="mk">Durchschnitt abgeschlossener Verkäufe</span><b>${fmtY(m.good)}</b></div>
         <div class="mrow"><span class="mk">Guter Kaufpreis · Richtwert</span><b>${fmtY(m.good)}</b></div>
       `:`
@@ -814,8 +815,12 @@ async function researchShopItem(id){
     if(data?.error) throw new Error(data.error);
     if(!data?.market) throw new Error("Die Recherche lieferte keine Preisdaten.");
     const patch={market:data.market};
-    if(isNum(data.market.low)) patch.min=data.market.low;
-    if(isNum(data.market.high)) patch.max=data.market.high;
+    const isAverage=data.market.soldMetric==="average" || /^Ø\\s*¥/i.test(data.market.sold||"");
+    if(isAverage){ patch.min=null; patch.max=null; }
+    else {
+      if(isNum(data.market.low)) patch.min=data.market.low;
+      if(isNum(data.market.high)) patch.max=data.market.high;
+    }
     if(isNum(data.market.good)) patch.price=data.market.good;
     await shopStore.update(id,patch);
     toast(isNum(data.market.good)?"Preise und Quelle wurden gespeichert.":"Referenzpreis und Quelle wurden gespeichert; passende aktuelle Angebote gab es nicht.");
