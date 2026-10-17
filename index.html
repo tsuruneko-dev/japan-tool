@@ -1,0 +1,1345 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Japan-Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Zen+Kaku+Gothic+New:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Bahnhofsschild-Karte im Zentrum; Liste gruppiert nach Kategorie wie Gleisanzeigen */
+:root{
+  --bg:#eef2f0; --surface:#ffffff; --ink:#14213a; --muted:#5a6678; --line:#d5ddd9;
+  --accent:#00875a; --accent-ink:#ffffff; --accent-soft:#dff1e9;
+  --miss:#b4461a; --miss-soft:#f7e6dc;
+  --f-jp:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif;
+  --f-body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d131e; --surface:#162033; --ink:#e7edf6; --muted:#97a3b6; --line:#28344c;
+  --accent:#33c48a; --accent-ink:#06150f; --accent-soft:#143528;
+  --miss:#f08a5d; --miss-soft:#3a2219; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d131e; --surface:#162033; --ink:#e7edf6; --muted:#97a3b6; --line:#28344c;
+  --accent:#33c48a; --accent-ink:#06150f; --accent-soft:#143528;
+  --miss:#f08a5d; --miss-soft:#3a2219; color-scheme:dark}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:20px 48px;display:flex;flex-direction:column;gap:20px}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;gap:2px}
+.brand .jp{font-family:var(--f-jp);font-weight:700;font-size:1.7rem;letter-spacing:.06em;line-height:1.1}
+.brand .de{font-size:.78rem;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:600}
+.seg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px}
+.seg button{border:0;background:none;padding:7px 16px;border-radius:999px;font-weight:600;font-size:.9rem;color:var(--muted);display:flex;gap:6px;align-items:center}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg .n{font-family:var(--f-mono);font-size:.75rem;opacity:.75}
+
+/* ---------- Karten ---------- */
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:600}
+select,input[type=text],input[type=search],textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0;width:100%}
+input[type=range]{accent-color:var(--accent);width:100%;margin:6px 0 0}
+.lbl .val{font-family:var(--f-mono);letter-spacing:0;text-transform:none;color:var(--ink);font-weight:500;margin-left:4px}
+.chipbtn{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:7px 12px;font-size:.85rem;font-weight:500}
+.chipbtn[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
+.progress{display:flex;align-items:center;gap:10px;font-family:var(--f-mono);font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar{flex:1;height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+
+.stage{perspective:1400px}
+.card{position:relative;width:100%;min-height:300px;cursor:pointer;transform-style:preserve-3d;transition:transform .45s cubic-bezier(.3,.7,.2,1)}
+.card.flipped{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 0 var(--line),0 12px 30px -18px rgba(20,33,58,.35);display:flex;flex-direction:column;overflow:hidden}
+.back{transform:rotateY(180deg)}
+.face .body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:28px 20px;text-align:center}
+.face .strip{background:var(--accent);color:var(--accent-ink);display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:.78rem;font-weight:600;letter-spacing:.06em;gap:10px}
+.strip .side{font-family:var(--f-mono);font-weight:500;opacity:.9}
+.big-de{font-size:clamp(1.5rem,5vw,2.1rem);font-weight:600;line-height:1.25;text-wrap:balance}
+.big-jp{font-family:var(--f-jp);font-weight:700;font-size:clamp(1.9rem,7vw,2.9rem);line-height:1.25;letter-spacing:.04em;text-wrap:balance;word-break:keep-all;overflow-wrap:anywhere}
+.romaji{font-size:1.15rem;font-style:italic;color:var(--muted);letter-spacing:.02em}
+.note{font-size:.85rem;color:var(--muted);max-width:40ch}
+.ctx{font-size:.9rem;line-height:1.4;color:var(--muted);max-width:36ch;text-wrap:balance;display:flex;flex-direction:column;align-items:center;gap:4px}
+.ctx::before{content:"Kontext";font-size:.62rem;line-height:1.5;text-transform:uppercase;letter-spacing:.12em;font-weight:700;border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.item .ctx{font-size:.8rem;align-items:flex-start;margin-top:4px;max-width:none;gap:2px}
+.hint{font-size:.8rem;color:var(--muted)}
+.speak{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:6px 12px;font-size:.82rem;font-weight:600;display:inline-flex;gap:6px;align-items:center;color:var(--ink);text-decoration:none}
+.audio{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.audiomsg{font-size:.8rem;color:var(--miss);max-width:40ch}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:12px 14px;font-weight:600;font-size:.95rem}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.miss{background:var(--miss-soft);border-color:transparent;color:var(--miss)}
+.btn.ok{background:var(--accent-soft);border-color:transparent;color:var(--accent)}
+:root[data-theme="dark"] .btn.ok{color:var(--accent)}
+.btn:disabled{opacity:.4;cursor:default}
+.kbd{font-family:var(--f-mono);font-size:.7rem;opacity:.6;margin-left:6px}
+.done{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px 20px;text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center}
+.done .score{font-family:var(--f-mono);font-size:2.2rem;font-variant-numeric:tabular-nums}
+.done .row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.empty{background:var(--surface);border:1px dashed var(--line);border-radius:14px;padding:32px 20px;text-align:center;color:var(--muted);display:flex;flex-direction:column;gap:12px;align-items:center}
+
+/* ---------- Liste ---------- */
+.listtop{display:grid;grid-template-columns:1fr auto;gap:8px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+form.edit{background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+form.edit .full{grid-column:1/-1}
+form.edit .jpin{font-family:var(--f-jp);font-size:1.1rem}
+form.edit .btns{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}
+.group{display:flex;flex-direction:column;gap:0}
+.group h2{font-size:.72rem;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:700;margin:0 0 6px;display:flex;justify-content:space-between}
+.group h2 .n{font-family:var(--f-mono);font-weight:400}
+.rows{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.item{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) auto;gap:14px;align-items:center;padding:12px 14px;border-top:1px solid var(--line)}
+.item:first-child{border-top:0}
+.item .de{font-weight:500;min-width:0}
+.item .jpcol{min-width:0;display:flex;flex-direction:column}
+.item .jp{font-family:var(--f-jp);font-size:1.15rem;font-weight:700;letter-spacing:.03em}
+.item .ro{font-style:italic;color:var(--muted);font-size:.9rem}
+.item .meta{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
+.stat{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat b{font-weight:500;color:var(--accent)} .stat s{text-decoration:none;color:var(--miss)}
+.tag{font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--muted)}
+.mini{border:0;background:none;color:var(--muted);font-size:.8rem;font-weight:600;padding:4px 6px;border-radius:6px}
+.mini:hover{background:var(--bg);color:var(--ink)}
+.mini.danger{color:var(--miss)}
+.mini.icon{padding:4px 7px;font-size:.9rem;line-height:1}
+.item .sub{font-size:.78rem;color:var(--muted);margin-top:2px}
+
+/* ---------- Bucket ---------- */
+.blist{display:flex;flex-direction:column;gap:8px}
+.brow{position:relative;display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.brow.shift{transition:transform .15s ease}
+.brow.dragging{z-index:5;box-shadow:0 14px 34px -12px rgba(20,33,58,.5);border-color:var(--accent)}
+.brow .dragh{padding:4px 6px;margin:-2px 0}
+.brow input[type=checkbox]{width:19px;height:19px;accent-color:var(--accent);margin:5px 0 0;flex:none}
+.brow .btext{flex:1;min-width:140px;overflow-wrap:anywhere;padding-top:4px}
+.brow.done .btext{color:var(--muted);text-decoration:line-through}
+.brow form.bedit{flex:1;display:flex;gap:8px;flex-wrap:wrap;min-width:0}
+.brow form.bedit input[type=text]{flex:1;min-width:120px}
+#bucketAddForm{display:grid;grid-template-columns:1fr auto;gap:8px}
+@media (max-width:560px){#bucketAddForm{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.brow.shift{transition:none}}
+.suggest{background:var(--accent-soft);border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 16px;align-items:center}
+.suggest .head{grid-column:1/-1;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.suggest .head .lbl{color:var(--accent)}
+.suggest .sde{font-weight:600;font-size:1.02rem}
+.suggest .sctx{font-size:.8rem;color:var(--muted);margin-top:2px}
+.suggest .sjp{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;margin-top:4px}
+.suggest .sjp .jp{font-family:var(--f-jp);font-weight:700;font-size:1.1rem}
+.suggest .sjp .ro{font-style:italic;color:var(--muted);font-size:.9rem}
+.suggest .sbtns{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.suggest .btn{padding:8px 12px;font-size:.85rem}
+.suggest .mini{text-align:center}
+@media (max-width:560px){.suggest{grid-template-columns:1fr}.suggest .sbtns{flex-direction:row;flex-wrap:wrap}}
+.aibox{display:flex;flex-direction:column;gap:8px}
+.aibar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.aibar .btn{border-style:dashed;border-color:var(--accent);color:var(--ink)}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:.88rem;max-width:calc(100% - 32px)}
+.status{font-size:.75rem;color:var(--muted)}
+
+/* ---------- Shopping ---------- */
+.fxbar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:.85rem;color:var(--muted)}
+.fxbar b{color:var(--ink);font-family:var(--f-mono);font-weight:500;font-variant-numeric:tabular-nums}
+.fxbar input{width:110px;padding:6px 8px}
+.shopsum{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-wrap:wrap;gap:8px 28px}
+.shopsum div{display:flex;flex-direction:column;gap:2px}
+.shopsum .v{font-family:var(--f-mono);font-variant-numeric:tabular-nums;font-size:.95rem}
+.shopsum .v small{color:var(--muted);font-size:.8rem;margin-left:6px}
+.shopgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.sitem{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.sitem.bought .sphoto img,.sitem.bought .sbody>*:not(.sact){opacity:.55}
+.sphoto{aspect-ratio:4/3;max-width:100%;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--muted);overflow:hidden;position:relative;border-bottom:1px solid var(--line)}
+.sphoto img{width:100%;height:100%;object-fit:contain;display:block}
+.sphoto .none{font-family:var(--f-jp);font-size:1.4rem;letter-spacing:.1em;opacity:.5}
+.spill{position:absolute;top:10px;left:10px;background:var(--accent);color:var(--accent-ink);font-size:.68rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:3px 9px;border-radius:999px}
+.sbody{padding:12px 14px 12px;display:flex;flex-direction:column;gap:10px;flex:1}
+.sname{font-weight:600;font-size:1.05rem;line-height:1.3;overflow-wrap:anywhere}
+.sdesc{font-size:.85rem;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.pwv{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:2px}
+.pwv b{font-family:var(--f-mono);font-size:1.35rem;font-weight:500;font-variant-numeric:tabular-nums}
+.pwv .e{font-family:var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.prange{position:relative;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--line) 50%,var(--miss));opacity:.9;margin:4px 6px}
+.prange i{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:var(--ink);border:3px solid var(--surface);transform:translate(-50%,-50%)}
+.pmm{display:flex;justify-content:space-between;gap:10px}
+.pmm div{display:flex;flex-direction:column;gap:1px;min-width:0}
+.pmm div:last-child{text-align:right}
+.pmm b{font-family:var(--f-mono);font-weight:500;font-size:.92rem;font-variant-numeric:tabular-nums}
+.pmm .e{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.sact{display:flex;gap:2px;flex-wrap:wrap;margin-top:auto;border-top:1px solid var(--line);padding-top:8px;align-items:center}
+.p3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.fxh{font-family:var(--f-mono);font-size:.75rem;color:var(--muted);min-height:1.2em}
+.phrow{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.phrow img{width:84px;height:63px;object-fit:contain;background:var(--bg);border-radius:6px;border:1px solid var(--line)}
+.phgrid{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start}
+.phcell{display:flex;flex-direction:column;gap:2px;align-items:center;width:96px}
+.phcell .pimg{position:relative;width:96px;height:72px;border-radius:6px;border:1px solid var(--line);background:var(--bg);overflow:hidden}
+.phcell .pimg img{width:100%;height:100%;object-fit:contain;display:block}
+.phcell.main .pimg{border:2px solid var(--accent)}
+.phcell .pbadge{position:absolute;left:4px;top:4px;background:var(--accent);color:var(--accent-ink);font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:1px 5px;border-radius:4px}
+.phcell .mini{font-size:.72rem;padding:2px 4px}
+.phadd{width:96px;height:72px;border:1px dashed var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:.78rem;font-weight:600;color:var(--muted);cursor:pointer;background:var(--surface)}
+.phadd:hover{border-color:var(--accent);color:var(--ink)}
+.phadd:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.phadd input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.sgal{display:flex;flex-direction:column;gap:8px;min-width:0}
+.sdots{display:flex;gap:6px;flex-wrap:wrap}
+.sdots button{width:48px;height:48px;padding:0;border-radius:6px;border:1px solid var(--line);background:var(--bg);overflow:hidden;opacity:.7}
+.sdots button[aria-pressed="true"]{border:2px solid var(--accent);opacity:1}
+.sdots img{width:100%;height:100%;object-fit:contain;display:block}
+.sthumb{position:relative}
+.sthumb .pcount{position:absolute;right:2px;bottom:2px;background:var(--ink);color:var(--bg);font-family:var(--f-mono);font-size:.6rem;line-height:1;padding:2px 4px;border-radius:4px}
+input[type=file]{font-size:.85rem;max-width:100%}
+.warn{font-size:.8rem;color:var(--miss)}
+.chk{display:inline-flex;gap:8px;align-items:center;font-size:.9rem;cursor:pointer}
+.chk input{width:18px;height:18px;accent-color:var(--accent);margin:0}
+.p3.fixed{grid-template-columns:minmax(0,1fr)}
+.p3.fixed .field{max-width:220px}
+@media (max-width:560px){.p3{grid-template-columns:1fr}}
+.slisttop{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.slist{display:flex;flex-direction:column;gap:8px}
+.viewseg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:2px;flex:none}
+.viewseg button{border:0;background:none;padding:5px 10px;border-radius:999px;font-size:.8rem;font-weight:600;color:var(--muted)}
+.viewseg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.sgallery{columns:2;column-gap:12px}
+@media (min-width:640px){.sgallery{columns:3}}
+@media (min-width:900px){.sgallery{columns:4}}
+.gtile{break-inside:avoid;margin:0 0 12px;border-radius:14px;overflow:hidden;position:relative;border:1px solid var(--line);background:var(--surface);cursor:pointer;display:block;width:100%}
+.gtile img{width:100%;display:block}
+.gtile .none{aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;font-family:var(--f-jp);color:var(--muted);opacity:.6}
+.gtile.bought{opacity:.55}
+.gtile .gcap{position:absolute;left:0;right:0;bottom:0;padding:18px 10px 8px;background:linear-gradient(to top,rgba(0,0,0,.7),transparent);color:#fff}
+.gtile .gname{font-size:.85rem;font-weight:600;line-height:1.25;overflow-wrap:anywhere}
+.gtile .gprice{font-family:var(--f-mono);font-size:.76rem;opacity:.92;margin-top:2px}
+.gtile .gtag{position:absolute;top:8px;left:8px;background:var(--accent);color:var(--accent-ink);font-size:.62rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:999px}
+.srow{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden;position:relative}
+.srow.shift{transition:transform .15s ease}
+.srow.dragging{z-index:5;box-shadow:0 14px 34px -12px rgba(20,33,58,.5);border-color:var(--accent)}
+.shead{display:grid;grid-template-columns:auto 56px minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:8px 12px 8px 2px;cursor:pointer;user-select:none}
+.dragh{border:0;background:none;color:var(--muted);cursor:grab;touch-action:none;padding:12px 8px;border-radius:6px;font-size:1.1rem;line-height:1}
+.dragh:hover{background:var(--bg);color:var(--ink)}
+.srow.dragging .dragh{cursor:grabbing}
+.sthumb{width:56px;height:56px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid var(--line)}
+.sthumb img{width:100%;height:100%;object-fit:contain;display:block}
+.sthumb .none,.sbig .none{font-family:var(--f-jp);color:var(--muted);opacity:.6;font-size:.6rem;letter-spacing:.05em}
+.stitle{min-width:0}
+.stitle .sname{font-size:.98rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stitle .sdesc{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.8rem;margin-top:1px}
+.sprice{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums;display:flex;flex-direction:column;white-space:nowrap}
+.sprice b{font-weight:500;font-size:.95rem}
+.sprice span{font-size:.75rem;color:var(--muted)}
+.chev{color:var(--muted);transition:transform .2s;font-size:.85rem}
+.srow.open .chev{transform:rotate(180deg)}
+.srow.bought .stitle,.srow.bought .sprice,.srow.bought .sthumb{opacity:.55}
+.sbody2{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:16px;padding:14px;border-top:1px solid var(--line)}
+.sbig{background:var(--bg);border-radius:10px;display:flex;align-items:center;justify-content:center;width:100%;max-width:100%;aspect-ratio:1/1;overflow:hidden}
+.sbig img{width:100%;height:100%;object-fit:contain;display:block}
+@media (max-width:560px){.sbig{aspect-ratio:4/3}}
+.sbig .none{font-size:1.1rem}
+.sdetails{display:flex;flex-direction:column;gap:10px;min-width:0}
+.sdesc.full{font-size:.88rem;color:var(--muted);overflow-wrap:anywhere}
+.mkt{background:var(--bg);border-radius:8px;padding:10px 12px;font-size:.84rem;display:flex;flex-direction:column;gap:7px}
+.mhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.mrow{display:grid;grid-template-columns:78px minmax(0,1fr);gap:8px;align-items:baseline}
+.mk{font-size:.66rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
+.conf{font-size:.64rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.conf.ok{background:var(--accent-soft);color:var(--accent)}
+.conf.warn{background:var(--miss-soft);color:var(--miss)}
+.mlinks{display:flex;flex-wrap:wrap;gap:2px 12px}
+.mkt a{color:var(--accent);font-weight:600;font-size:.76rem;text-decoration:none}
+.mhint{font-size:.74rem;color:var(--muted);border-top:1px solid var(--line);padding-top:6px}
+@media (max-width:560px){
+  .shead{grid-template-columns:auto 48px minmax(0,1fr) auto;gap:10px}
+  .sthumb{width:48px;height:48px}
+  .shead .chev{display:none}
+  .sbody2{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){.srow.shift,.chev{transition:none}}
+
+@media (max-width:560px){
+  .item{grid-template-columns:1fr;gap:4px}
+  .item .meta{justify-content:flex-start}
+  form.edit{grid-template-columns:1fr}
+  .listtop{grid-template-columns:1fr}
+  .card{min-height:280px}
+}
+@media (prefers-reduced-motion:reduce){.card{transition:none}.bar i{transition:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="jp">旅の言葉</span><span class="de">Meine Japan-Reisephrasen</span></div>
+    <div class="seg" role="group" aria-label="Ansicht">
+      <button id="tabCards" aria-pressed="true">Karten</button>
+      <button id="tabList" aria-pressed="false">Liste <span class="n" id="countAll">0</span></button>
+      <button id="tabShop" aria-pressed="false">Shopping <span class="n" id="countShop">0</span></button>
+      <button id="tabBucket" aria-pressed="false">Bucket <span class="n" id="countBucket">0</span></button>
+    </div>
+  </header>
+
+  <section id="viewCards">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="toolbar">
+        <div class="field" style="flex:1 1 160px"><label class="lbl" for="deckCat">Kategorie</label><select id="deckCat"></select></div>
+        <div class="field"><span class="lbl">Richtung</span><button class="chipbtn" id="dirBtn" aria-pressed="false">Deutsch → Japanisch</button></div>
+        <div class="field"><span class="lbl">Auswahl</span><button class="chipbtn" id="hardBtn" aria-pressed="false">Nur schwierige</button></div>
+      </div>
+      <div class="field"><label class="lbl" for="limitR">Karten pro Runde<span class="val" id="limitTxt"></span></label><input type="range" id="limitR" min="1" max="1" step="1" value="1"></div>
+      <div class="progress"><span id="progTxt">0 / 0</span><div class="bar"><i id="progBar"></i></div><span id="scoreTxt"></span></div>
+      <div id="cardArea"></div>
+    </div>
+  </section>
+
+  <section id="viewList" hidden>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div id="suggest"></div>
+      <div id="aiSug"></div>
+      <div id="vtBar"></div>
+      <div class="listtop">
+        <input type="search" id="q" placeholder="Suchen (Deutsch, Romaji oder Japanisch)" aria-label="Suchen">
+        <button class="btn primary" id="addBtn">+ Phrase hinzufügen</button>
+      </div>
+      <div class="chips" id="listChips"></div>
+      <div id="formSlot"></div>
+      <div id="listArea" style="display:flex;flex-direction:column;gap:18px"></div>
+      <div class="status" id="status"></div>
+      <div class="status">Aussprache: Kokoro-Sprachmodell (Apache 2.0), Lesungen mit Open JTalk.</div>
+    </div>
+  </section>
+
+  <section id="viewShop" hidden>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div class="listtop">
+        <div class="fxbar" id="fxBar"></div>
+        <button class="btn primary" data-act="shopAdd">+ Item hinzufügen</button>
+      </div>
+      <div id="shopSum"></div>
+      <div id="shopFormSlot"></div>
+      <div id="shopArea"></div>
+    </div>
+  </section>
+
+  <section id="viewBucket" hidden>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <form id="bucketAddForm">
+        <input type="text" id="bucketInput" placeholder="z. B. Mt. Fuji sehen, Ramen in Ichiran essen, Pokémon-Center besuchen" aria-label="Neuer Punkt für die Bucket-Liste">
+        <button class="btn primary" type="submit">+ Hinzufügen</button>
+      </form>
+      <div id="bucketArea"></div>
+    </div>
+  </section>
+</div>
+<datalist id="catList"></datalist>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const ls = { get(k){try{return JSON.parse(localStorage.getItem(k))}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}} };
+
+// Nur für den Fall, dass der Online-Speicher nicht verfügbar ist (z. B. Vorschau)
+const FALLBACK = [
+  {de:"Danke schön",ro:"arigatou gozaimasu",jp:"ありがとうございます",cat:"Basics",note:"",ex:true},
+  {de:"Entschuldigung (um jemanden anzusprechen)",ro:"sumimasen",jp:"すみません",cat:"Basics",note:"",ex:true},
+  {de:"Wie viel kostet das?",ro:"kore wa ikura desu ka",jp:"これはいくらですか",cat:"Einkaufen",note:"",ex:true},
+  {de:"Die Rechnung, bitte.",ro:"okaikei onegaishimasu",jp:"お会計お願いします",cat:"Restaurant",note:"",ex:true},
+  {de:"Wo ist der Bahnhof?",ro:"eki wa doko desu ka",jp:"駅はどこですか",cat:"Unterwegs",note:"",ex:true},
+];
+
+// Häufig gebrauchte Reisephrasen für die Vorschlagsbox
+const POOL = [
+  {de:"Ja.",ro:"Hai.",jp:"はい。",cat:"Allgemein",ctx:"Zustimmen oder zeigen, dass man zuhört."},
+  {de:"Bitte. (beim Bitten)",ro:"Onegaishimasu.",jp:"お願いします。",cat:"Allgemein",ctx:"Wenn man um etwas bittet, z. B. beim Bestellen oder an der Rezeption."},
+  {de:"Noch einmal, bitte.",ro:"Mō ichido onegaishimasu.",jp:"もう一度お願いします。",cat:"Allgemein",ctx:"Wenn man etwas nicht verstanden hat."},
+  {de:"Langsam, bitte.",ro:"Yukkuri onegaishimasu.",jp:"ゆっくりお願いします。",cat:"Allgemein",ctx:"Wenn jemand zu schnell spricht."},
+  {de:"Sprechen Sie Englisch?",ro:"Eigo o hanasemasu ka?",jp:"英語を話せますか？",cat:"Allgemein",ctx:"Bevor man auf Englisch weiterfragt."},
+  {de:"Verstanden.",ro:"Wakarimashita.",jp:"わかりました。",cat:"Allgemein",ctx:"Wenn man eine Erklärung verstanden oder akzeptiert hat."},
+  {de:"Tut mir leid!",ro:"Gomen nasai!",jp:"ごめんなさい！",cat:"Allgemein",ctx:"Wenn man sich für einen eigenen Fehler entschuldigt."},
+  {de:"Gibt es hier WLAN?",ro:"Wi-Fi wa arimasu ka?",jp:"Wi-Fiはありますか？",cat:"Allgemein",ctx:"Im Café, Restaurant oder Hotel."},
+  {de:"Hilfe!",ro:"Tasukete!",jp:"助けて！",cat:"Allgemein",ctx:"Im Notfall."},
+  {de:"Gute Nacht!",ro:"Oyasumi nasai!",jp:"おやすみなさい！",cat:"Begrüßungen",ctx:"Abends beim Verabschieden oder vor dem Schlafen."},
+  {de:"Bis dann!",ro:"Jā, mata!",jp:"じゃあ、また！",cat:"Begrüßungen",ctx:"Locker verabschieden, unter Bekannten."},
+  {de:"Zwei Personen.",ro:"Futari desu.",jp:"二人です。",cat:"Restaurant",ctx:"Wenn das Personal am Eingang fragt, wie viele man ist."},
+  {de:"Die Speisekarte bitte.",ro:"Menyū o kudasai.",jp:"メニューをください。",cat:"Restaurant",ctx:"Nach dem Hinsetzen, wenn keine Karte am Tisch liegt."},
+  {de:"Gibt es eine englische Speisekarte?",ro:"Eigo no menyū wa arimasu ka?",jp:"英語のメニューはありますか？",cat:"Restaurant",ctx:"Wenn die Karte nur auf Japanisch ist."},
+  {de:"Was empfehlen Sie?",ro:"Osusume wa nan desu ka?",jp:"おすすめは何ですか？",cat:"Restaurant",ctx:"Wenn man sich nicht entscheiden kann."},
+  {de:"Prost!",ro:"Kanpai!",jp:"乾杯！",cat:"Restaurant",ctx:"Beim Anstoßen."},
+  {de:"Getrennt zahlen bitte.",ro:"Betsubetsu de onegaishimasu.",jp:"別々でお願いします。",cat:"Restaurant",ctx:"Beim Bezahlen in der Gruppe."},
+  {de:"Zum Mitnehmen bitte.",ro:"Mochikaeri de onegaishimasu.",jp:"持ち帰りでお願いします。",cat:"Restaurant",ctx:"Im Café oder Imbiss, wenn gefragt wird: hier essen oder mitnehmen?"},
+  {de:"Zum Hieressen bitte.",ro:"Tennai de onegaishimasu.",jp:"店内でお願いします。",cat:"Restaurant",ctx:"Im Café oder Imbiss, wenn gefragt wird: hier essen oder mitnehmen?"},
+  {de:"Kann ich mit Karte zahlen?",ro:"Kādo de haraemasu ka?",jp:"カードで払えますか？",cat:"Shopping",ctx:"Vor dem Bezahlen, vor allem in kleinen Läden."},
+  {de:"Ich brauche keine Tüte.",ro:"Fukuro wa daijōbu desu.",jp:"袋は大丈夫です。",cat:"Shopping",ctx:"Wenn an der Kasse nach einer Tüte gefragt wird."},
+  {de:"Kann ich das anprobieren?",ro:"Shichaku shite mo ii desu ka?",jp:"試着してもいいですか？",cat:"Shopping",ctx:"Bei Kleidung im Laden."},
+  {de:"Ist das steuerfrei möglich?",ro:"Menzei dekimasu ka?",jp:"免税できますか？",cat:"Shopping",ctx:"Bei größeren Einkäufen. Reisepass dabeihaben."},
+  {de:"Wo ist der Bahnhof?",ro:"Eki wa doko desu ka?",jp:"駅はどこですか？",cat:"Unterwegs",ctx:"Passanten auf der Straße fragen."},
+  {de:"Hierhin bitte.",ro:"Koko made onegaishimasu.",jp:"ここまでお願いします。",cat:"Unterwegs",ctx:"Im Taxi, während man die Adresse auf dem Handy zeigt."},
+  {de:"Ausgang",ro:"Deguchi",jp:"出口",cat:"Unterwegs",ctx:"Steht auf Schildern in Bahnhöfen und Gebäuden."},
+  {de:"Eingang",ro:"Iriguchi",jp:"入口",cat:"Unterwegs",ctx:"Steht auf Schildern in Bahnhöfen und Gebäuden."},
+  {de:"Rechts",ro:"Migi",jp:"右",cat:"Unterwegs",ctx:"Bei Wegbeschreibungen."},
+  {de:"Links",ro:"Hidari",jp:"左",cat:"Unterwegs",ctx:"Bei Wegbeschreibungen."},
+  {de:"Ich möchte einchecken.",ro:"Chekkuin o onegaishimasu.",jp:"チェックインをお願いします。",cat:"Hotel",ctx:"An der Rezeption."},
+  {de:"Können Sie mein Gepäck aufbewahren?",ro:"Nimotsu o azukatte moraemasu ka?",jp:"荷物を預かってもらえますか？",cat:"Hotel",ctx:"Vor dem Check-in oder nach dem Check-out."},
+];
+const norm = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9぀-ヿ一-鿿]/g,"");
+
+const S = {
+  items: [], loaded:false, mode:"local", db:null,
+  view: ls.get("jp.view") || "cards",
+  deckCat: ls.get("jp.cat") || "Alle", dirJp: !!ls.get("jp.dir"), hard:false, limit: ls.get("jp.limit") || 0,
+  deck: [], idx: 0, flipped:false, res:{ok:0, miss:[]},
+  q:"", listCat:"Alle", editing:null, confirmDel:null,
+  sug:null, sugSkip:new Set(ls.get("jp.skip")||[]), sugAdded:new Set(),
+  sample:null, aiBusy:false, aiErr:"", aiSugs:[],
+};
+
+/* ---------- Shopping-Liste ---------- */
+const DEFAULT_FX = {rate:177.15, date:"2026-10-09"};
+Object.assign(S, {shop:[], shopLoaded:false, fx:{...DEFAULT_FX}, research:{updated:0}, assets:null,
+  shopEdit:null, shopDel:null, shopBusy:false, fxEdit:false, shopPhotos:[], shopPhVer:0, shopSel:{},
+  shopOpenSet:new Set(ls.get("jp.shopOpen")||[]), dragging:false, shopPending:false,
+  shopView: ls.get("jp.shopView")==="gallery" ? "gallery" : "list"});
+const saveOpen = () => ls.set("jp.shopOpen", [...S.shopOpenSet]);
+
+/* ---------- Bucket-Liste ---------- */
+Object.assign(S, {bucket:[], bucketLoaded:false, bucketDel:null, bucketEdit:null, bucketPending:false});
+const bucketById = id => S.bucket.find(i => i.id === id);
+const bucketSorted = () => [...S.bucket].sort((a,b) => (!!a.done - !!b.done) || (sortKey(a) - sortKey(b)));
+const bucketStore = {
+  async add(o){ if (S.db) await S.db.collection("bucket").add(o); else { o.id = "b"+Math.random().toString(36).slice(2,10); S.bucket.push(o); ls.set("jp.bucket", S.bucket); renderAll(); } },
+  async update(id, p){ if (S.db) await S.db.doc("bucket/"+id).update(p); else { Object.assign(bucketById(id)||{}, p); ls.set("jp.bucket", S.bucket); renderAll(); } },
+  async remove(id){ if (S.db) await S.db.doc("bucket/"+id).delete(); else { S.bucket = S.bucket.filter(i=>i.id!==id); ls.set("jp.bucket", S.bucket); renderAll(); } },
+};
+function renderBucket(){
+  if (!$("viewBucket")) return;
+  $("countBucket").textContent = S.bucket.filter(i=>!i.done).length;
+  const area = $("bucketArea");
+  if (!S.bucketLoaded){ area.innerHTML = `<div class="empty">Deine Bucket-Liste wird geladen …</div>`; return; }
+  if (!S.bucket.length){
+    area.innerHTML = `<div class="empty"><strong>Noch leer</strong><span>Trag oben ein, was du in Japan machen, erleben oder kaufen willst. Zum Abhaken, sobald es erledigt ist.</span></div>`;
+    return;
+  }
+  if (S.dragging){ S.bucketPending = true; return; }
+  const list = bucketSorted();
+  area.innerHTML = `<div class="status" style="margin-bottom:2px">Zum Sortieren am Griff ⠿ ziehen.</div>
+  <div class="blist">${list.map(i => {
+    if (S.bucketEdit === i.id) return `
+      <div class="brow" data-id="${i.id}">
+        <button class="dragh" data-act="dragNoop" data-id="${i.id}" aria-label="Verschieben (Pfeiltasten)" title="Ziehen zum Sortieren">⠿</button>
+        <form class="bedit" data-id="${i.id}">
+          <input type="text" id="bEditInput" value="${esc(i.text)}">
+          <button type="submit" class="btn primary">Speichern</button>
+          <button type="button" class="mini" data-act="bucketEditCancel">Abbrechen</button>
+        </form>
+      </div>`;
+    return `
+    <div class="brow ${i.done?"done":""}" data-id="${i.id}">
+      <button class="dragh" data-act="dragNoop" data-id="${i.id}" aria-label="Verschieben (Pfeiltasten)" title="Ziehen zum Sortieren">⠿</button>
+      <input type="checkbox" ${i.done?"checked":""} data-act="bucketToggle" data-id="${i.id}" aria-label="${esc(i.text)} erledigt">
+      <span class="btext">${esc(i.text)}</span>
+      ${S.bucketDel===i.id
+        ? `<span class="stat">Löschen?</span><button class="mini danger" data-act="bucketDelYes" data-id="${i.id}">Ja</button><button class="mini" data-act="bucketDelNo">Nein</button>`
+        : `<button class="mini icon" data-act="bucketEdit" data-id="${i.id}" aria-label="Bearbeiten" title="Bearbeiten">✎</button><button class="mini icon danger" data-act="bucketDel" data-id="${i.id}" aria-label="Löschen" title="Löschen">🗑</button>`}
+    </div>`; }).join("")}</div>`;
+  if (S.bucketEdit){ const el = $("bEditInput"); if (el){ el.focus(); el.select(); } }
+}
+const nf = new Intl.NumberFormat("de-DE");
+const ef = new Intl.NumberFormat("de-DE",{style:"currency",currency:"EUR"});
+const isNum = n => typeof n === "number" && isFinite(n);
+const fmtY = n => isNum(n) ? nf.format(Math.round(n)) + " ¥" : "–";
+const fmtE = n => isNum(n) ? ef.format(n / S.fx.rate) : "";
+const parseY = s => { const d = String(s ?? "").replace(/[^\d]/g, ""); return d ? +d : null; };
+// Zeigt Datum, und wenn bekannt (ms-Zeitstempel oder ISO-String mit "T") auch die Uhrzeit. Ältere Einträge haben nur "YYYY-MM-DD" (keine Uhrzeit bekannt).
+const fmtDate = v => {
+  if (!v) return "";
+  try {
+    const hasTime = typeof v === "number" || /T/.test(v);
+    const d = typeof v === "number" ? new Date(v) : new Date(hasTime ? v : v + "T12:00:00");
+    return hasTime
+      ? d.toLocaleString("de-DE", {day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})
+      : d.toLocaleDateString("de-DE");
+  } catch(e){ return String(v); }
+};
+const todayISO = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`; };
+const shopById = id => S.shop.find(i => i.id === id);
+// Fotos eines Items: "photos" (Liste), ältere Items haben nur "photo". Das erste Foto ist das Hauptbild.
+const photosOf = i => Array.isArray(i.photos) && i.photos.length ? i.photos.filter(Boolean) : (i.photo ? [i.photo] : []);
+const MAX_PHOTOS = 8;
+
+/* Kurs: Artifact-Seiten haben kein Netzwerk nach draußen (fetch zu externen APIs geht hier nicht) –
+   deshalb kein echtes "live", sondern einfach der zuletzt eingetragene Stand. Neu eintragen: im Chat
+   mit Claude fragen ("aktualisiere den Kurs"), dann wird er direkt in settings/fx geschrieben. */
+const shopMissingPrice = () => S.shop.filter(i => !i.bought && !i.fixed && !isNum(i.price)).map(i => i.name);
+
+const shopStore = {
+  async add(o){ if (S.db) await S.db.collection("shop").add(o); else { o.id = "s"+Math.random().toString(36).slice(2,10); S.shop.push(o); ls.set("jp.shop", S.shop); renderAll(); } },
+  async update(id, p){ if (S.db) await S.db.doc("shop/"+id).update(p); else { Object.assign(shopById(id)||{}, p); ls.set("jp.shop", S.shop); renderAll(); } },
+  async remove(id){ if (S.db) await S.db.doc("shop/"+id).delete(); else { S.shop = S.shop.filter(i=>i.id!==id); ls.set("jp.shop", S.shop); renderAll(); } },
+  async fx(v){ if (S.db) await S.db.doc("settings/fx").set(v); else { S.fx = v; ls.set("jp.fx", v); renderShop(); } },
+};
+
+async function shrinkImage(file){
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const s = Math.min(1, 1400 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("toBlob")), "image/jpeg", 0.85));
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function priceBlock(i){
+  const p = i.price, mn = i.min, mx = i.max;
+  if (i.fixed) return `<div><span class="lbl">Festpreis</span><div class="pwv"><b>${fmtY(p)}</b><span class="e">${isNum(p)?"≈ "+fmtE(p):""}</span></div></div>`;
+  let bar = "";
+  if (isNum(mn) && isNum(mx) && mx > mn){
+    const pos = isNum(p) ? Math.max(0, Math.min(100, (p - mn) / (mx - mn) * 100)) : null;
+    bar = `<div class="prange" title="Zwischen Minimum und Maximum">${pos!=null?`<i style="left:${pos}%"></i>`:""}</div>`;
+  }
+  const mm = (isNum(mn) || isNum(mx)) ? `<div class="pmm">
+      <div><span class="lbl">Minimum</span><b>${fmtY(mn)}</b><span class="e">${fmtE(mn)}</span></div>
+      <div><span class="lbl">Maximum</span><b>${fmtY(mx)}</b><span class="e">${fmtE(mx)}</span></div>
+    </div>` : "";
+  return `<div><span class="lbl">Wunschpreis</span><div class="pwv"><b>${fmtY(p)}</b><span class="e">${isNum(p)?"≈ "+fmtE(p):""}</span></div></div>${bar}${mm}`;
+}
+
+/* Preisrecherche: was Läden verlangen, was tatsächlich bezahlt wurde, wie gut das belegt ist */
+const CONF = {good:["gut belegt","ok"], thin:["wenig Daten","warn"], estimate:["geschätzt","warn"]};
+const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch(e){ return "Quelle"; } };
+function mktHtml(i){
+  const m = i.market; if (!m || !(m.shop || m.sold || m.note)) return "";
+  const c = CONF[m.confidence];
+  const links = (m.sources||[]).filter(u => /^https?:\/\//.test(u)).slice(0,3)
+    .map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(hostOf(u))} ↗</a>`).join("");
+  return `<div class="mkt">
+    <div class="mhead"><span class="lbl">Preisrecherche${m.date?" · "+esc(fmtDate(m.date)):""}</span>${c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
+    ${m.shop?`<div class="mrow"><span class="mk">Im Laden</span><span>${esc(m.shop)}</span></div>`:""}
+    ${m.sold?`<div class="mrow"><span class="mk">Verkauft</span><span>${esc(m.sold)}</span></div>`:""}
+    ${!m.shop && !m.sold && m.note?`<div>${esc(m.note)}</div>`:""}
+    ${links?`<div class="mlinks">${links}</div>`:""}
+    ${i.fixed ? "" : `<div class="mhint">Daraus abgeleitet: Minimum ≈ günstigste realistische Verkäufe, Wunschpreis ≈ Median, also was man für ein gutes Exemplar typischerweise zahlt, Maximum ≈ normaler oberer Ladenpreis.</div>`}
+  </div>`;
+}
+
+function shopFormHtml(e){
+  const canPhoto = !!S.assets, P = S.shopPhotos;
+  const cells = P.map((x, n) => `<div class="phcell ${n===0?"main":""}">
+      <div class="pimg"><img src="${esc(x.url || "/_blob/" + x.id)}" alt="Foto ${n+1}">${n===0?`<span class="pbadge">Haupt</span>`:""}</div>
+      ${canPhoto ? `<div>${n>0?`<button type="button" class="mini" data-act="phMain" data-k="${n}" title="Als Hauptbild verwenden">★ Haupt</button>`:""}<button type="button" class="mini danger" data-act="phRm" data-k="${n}" aria-label="Foto ${n+1} entfernen">Entfernen</button></div>` : ""}
+    </div>`).join("");
+  return `<form class="edit" id="shopForm">
+    <div class="field full"><span class="lbl">Fotos${P.length?` · ${P.length}`:""}</span>
+      <div class="phgrid">${cells}
+        ${canPhoto ? (P.length < MAX_PHOTOS ? `<label class="phadd">+ Foto${P.length?"s":""} hinzufügen<input type="file" id="sPhoto" accept="image/*" multiple></label>` : "")
+          : `<span class="status">Fotos können in dieser Ansicht nicht hochgeladen werden.</span>`}
+      </div>
+      ${canPhoto && P.length ? `<span class="status">Das erste Foto ist das Hauptbild in der Liste. Weitere Fotos, z. B. von Verpackung oder Rückseite, siehst du beim Aufklappen.</span>` : ""}
+    </div>
+    <div class="field full"><label class="lbl" for="sName">Name</label><input type="text" id="sName" required value="${esc(e.name||"")}" placeholder="z. B. Pokémon-Karte Glurak ex SAR"></div>
+    <div class="field full"><label class="lbl" for="sDesc">Beschreibung (optional)</label><input type="text" id="sDesc" value="${esc(e.desc||"")}" placeholder="z. B. Japanisch, PSA 10, Set Ruler of the Black Flame"></div>
+    <div class="field full"><label class="lbl" for="sDims">Paketmaße (optional)</label><input type="text" id="sDims" value="${esc(e.dims||"")}" placeholder="z. B. 30 × 20 × 15 cm"></div>
+    <div class="field full"><label class="chk"><input type="checkbox" id="sFixed" ${e.fixed?"checked":""}> Festpreis (z. B. Preis im Pokémon Center oder beim Hersteller)</label></div>
+    <div class="full p3 ${e.fixed?"fixed":""}" id="sP3">
+      <div class="field" id="wMin" ${e.fixed?"hidden":""}><label class="lbl" for="sMin">Minimum ¥</label><input type="text" inputmode="numeric" id="sMin" value="${isNum(e.min)?e.min:""}" placeholder="z. B. 8000"><span class="fxh" id="hMin"></span></div>
+      <div class="field"><label class="lbl" for="sPrice" id="lPrice">${e.fixed?"Festpreis ¥":"Wunschpreis ¥"}</label><input type="text" inputmode="numeric" id="sPrice" value="${isNum(e.price)?e.price:""}" placeholder="z. B. 10000"><span class="fxh" id="hPrice"></span></div>
+      <div class="field" id="wMax" ${e.fixed?"hidden":""}><label class="lbl" for="sMax">Maximum ¥</label><input type="text" inputmode="numeric" id="sMax" value="${isNum(e.max)?e.max:""}" placeholder="z. B. 14000"><span class="fxh" id="hMax"></span></div>
+    </div>
+    <div class="full warn" id="sWarn"></div>
+    <div class="btns"><button type="button" class="btn" data-act="shopCancel">Abbrechen</button><button type="submit" class="btn primary" id="sSave">${S.shopEdit==="new"?"Hinzufügen":"Speichern"}</button></div>
+  </form>`;
+}
+function shopHints(){
+  const v = {min:parseY($("sMin")?.value), price:parseY($("sPrice")?.value), max:parseY($("sMax")?.value)};
+  [["hMin","min"],["hPrice","price"],["hMax","max"]].forEach(([h,k]) => { const el=$(h); if (el) el.textContent = isNum(v[k]) ? "≈ " + fmtE(v[k]) : ""; });
+  const fx = !!$("sFixed")?.checked;
+  if ($("sP3")){ $("sP3").classList.toggle("fixed", fx); $("wMin").hidden = fx; $("wMax").hidden = fx; $("lPrice").textContent = fx ? "Festpreis ¥" : "Wunschpreis ¥"; }
+  const w = $("sWarn"); if (!w) return;
+  const bad = !fx && (isNum(v.min)&&isNum(v.price)&&v.min>v.price) || (isNum(v.price)&&isNum(v.max)&&v.price>v.max) || (isNum(v.min)&&isNum(v.max)&&v.min>v.max);
+  w.textContent = bad ? "Hinweis: Normalerweise gilt Minimum ≤ Wunschpreis ≤ Maximum." : "";
+}
+
+function renderShop(){
+  if (!$("viewShop")) return;
+  $("countShop").textContent = S.shop.filter(i=>!i.bought).length;
+  // Kurs
+  $("fxBar").innerHTML = `<span>Kurs: <b>1 € = ${new Intl.NumberFormat("de-DE",{maximumFractionDigits:2}).format(S.fx.rate)} ¥</b></span>
+    <span class="status">Stand ${esc(fmtDate(S.fx.updated||S.fx.date))||"nie"}</span>`;
+  // Übersicht
+  const open = S.shop.filter(i => !i.bought);
+  const val = (i, k) => i.fixed ? i.price : i[k];
+  const sum = k => open.reduce((a,i) => a + (isNum(val(i,k)) ? val(i,k) : 0), 0);
+  $("shopSum").innerHTML = open.length ? `<div class="shopsum">
+      <div><span class="lbl">Noch offen</span><span class="v">${open.length} Item${open.length===1?"":"s"}</span></div>
+      <div><span class="lbl">Summe Wunsch- und Festpreise</span><span class="v">${fmtY(sum("price"))}<small>${fmtE(sum("price"))}</small></span></div>
+      <div><span class="lbl">Summe Maximum</span><span class="v">${fmtY(sum("max"))}<small>${fmtE(sum("max"))}</small></span></div>
+    </div>` : "";
+  // Formular
+  const slot = $("shopFormSlot");
+  if (S.shopEdit){
+    const key = S.shopEdit + "|" + S.shopPhVer + "|" + !!S.assets;
+    if (slot.dataset.for !== key){
+      const keep = slot.querySelector("form") ? {n:$("sName").value,d:$("sDesc").value,dm:$("sDims").value,a:$("sMin").value,p:$("sPrice").value,x:$("sMax").value,f:$("sFixed").checked} : null;
+      const e = S.shopEdit === "new" ? {} : (shopById(S.shopEdit) || {});
+      slot.dataset.for = key; slot.innerHTML = shopFormHtml(e);
+      if (keep){ $("sName").value=keep.n; $("sDesc").value=keep.d; $("sDims").value=keep.dm; $("sMin").value=keep.a; $("sPrice").value=keep.p; $("sMax").value=keep.x; $("sFixed").checked=keep.f; }
+      else setTimeout(() => $("sName")?.focus(), 0);
+      shopHints();
+    }
+  } else { slot.innerHTML = ""; slot.dataset.for = ""; }
+  // Liste
+  const area = $("shopArea");
+  if (!S.shopLoaded){ area.innerHTML = `<div class="empty">Deine Shopping-Liste wird geladen …</div>`; return; }
+  if (!S.shop.length){
+    area.innerHTML = `<div class="empty"><strong>Noch keine Items</strong><span>Trag ein, was du in Japan suchst: mit Foto, Wunschpreis und deinen Preisgrenzen in Yen.</span><button class="btn primary" data-act="shopAdd">Erstes Item anlegen</button></div>`;
+    return;
+  }
+  if (S.dragging){ S.shopPending = true; return; }
+  const list = shopSorted();
+  const imgOf = (i, id) => id
+    ? `<img src="/_blob/${esc(id)}" alt="${esc(i.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'none',textContent:'写真なし'}))">`
+    : `<span class="none">写真なし</span>`;
+  const img = i => { const P = photosOf(i); return imgOf(i, P[0]) + (P.length > 1 ? `<span class="pcount">${P.length}</span>` : ""); };
+  const gal = i => { const P = photosOf(i), k = Math.min(S.shopSel[i.id] || 0, Math.max(0, P.length - 1));
+    return `<div class="sgal"><div class="sbig">${imgOf(i, P[k])}</div>${P.length > 1 ? `<div class="sdots">${P.map((id, n) =>
+      `<button type="button" data-act="shopPic" data-id="${i.id}" data-k="${n}" aria-pressed="${n===k}" aria-label="Foto ${n+1} von ${P.length}"><img src="/_blob/${esc(id)}" alt="" loading="lazy"></button>`).join("")}</div>` : ""}</div>`; };
+  const allOpen = list.every(i => S.shopOpenSet.has(i.id));
+  const viewseg = `<div class="viewseg" role="group" aria-label="Ansicht">
+      <button data-act="shopViewList" aria-pressed="${S.shopView==="list"}" title="Listenansicht">☰ Liste</button>
+      <button data-act="shopViewGallery" aria-pressed="${S.shopView==="gallery"}" title="Galerie">▦ Galerie</button>
+    </div>`;
+  if (S.shopView === "gallery"){
+    area.innerHTML = `<div class="slisttop">${viewseg}</div>
+    <div class="sgallery">${list.map(i => { const P = photosOf(i);
+      return `<button type="button" class="gtile ${i.bought?"bought":""}" data-act="shopGalleryOpen" data-id="${i.id}">
+        ${P[0] ? `<img src="/_blob/${esc(P[0])}" alt="${esc(i.name)}" loading="lazy">` : `<span class="none">写真なし</span>`}
+        ${i.bought?`<span class="gtag">Gekauft</span>`:""}
+        <div class="gcap"><div class="gname">${esc(i.name)}</div>${isNum(i.price)||i.fixed?`<div class="gprice">${fmtY(i.price)}</div>`:""}</div>
+      </button>`; }).join("")}</div>`;
+    return;
+  }
+  area.innerHTML = `<div class="slisttop">${viewseg}<span class="status">Zum Sortieren am Griff ⠿ ziehen.</span><button class="mini" data-act="shopAll">${allOpen?"Alle zuklappen":"Alle aufklappen"}</button></div>
+  <div class="slist" id="slist">${list.map(i => { const open = S.shopOpenSet.has(i.id); return `
+    <div class="srow ${open?"open":""} ${i.bought?"bought":""}" data-id="${i.id}">
+      <div class="shead" data-act="shopToggle" data-id="${i.id}" role="button" tabindex="0" aria-expanded="${open}">
+        <button class="dragh" data-act="dragNoop" data-id="${i.id}" aria-label="Verschieben (Pfeiltasten)" title="Ziehen zum Sortieren">⠿</button>
+        <div class="sthumb">${img(i)}</div>
+        <div class="stitle"><div class="sname">${esc(i.name)}${i.bought?` <span class="tag">Gekauft</span>`:""}</div>${i.desc?`<div class="sdesc">${esc(i.desc)}</div>`:""}</div>
+        <div class="sprice"><b>${fmtY(i.price)}</b><span>${isNum(i.price)?fmtE(i.price):""}</span></div>
+        <span class="chev" aria-hidden="true">▾</span>
+      </div>
+      ${open ? `<div class="sbody2">
+        ${gal(i)}
+        <div class="sdetails">
+          ${i.desc?`<div class="sdesc full">${esc(i.desc)}</div>`:""}
+          ${i.dims?`<div><span class="lbl">Paketmaße</span><div class="sdesc full">${esc(i.dims)}</div></div>`:""}
+          ${priceBlock(i)}
+          ${mktHtml(i)}
+          <div class="sact">
+            ${S.shopDel===i.id
+              ? `<span class="stat">Wirklich löschen?</span><button class="mini danger" data-act="shopDelYes" data-id="${i.id}">Ja</button><button class="mini" data-act="shopDelNo">Nein</button>`
+              : `<button class="mini" data-act="shopBought" data-id="${i.id}">${i.bought?"Doch nicht gekauft":"✓ Gekauft"}</button><button class="mini" data-act="shopEdit" data-id="${i.id}">Bearbeiten</button><button class="mini danger" data-act="shopDel" data-id="${i.id}">Löschen</button>`}
+          </div>
+        </div>
+      </div>` : ""}
+    </div>`; }).join("")}</div>`;
+}
+
+/* ---------- Sortieren per Ziehen ---------- */
+const sortKey = i => isNum(i.order) ? i.order : (i.created || 0);
+const shopSorted = () => [...S.shop].sort((a,b) => (!!a.bought - !!b.bought) || (sortKey(a) - sortKey(b)));
+function shopMove(id, to){
+  const L = shopSorted(), from = L.findIndex(i => i.id === id);
+  if (from < 0 || to < 0 || to >= L.length || to === from) return;
+  const [it] = L.splice(from, 1); L.splice(to, 0, it);
+  const prev = L[to-1], next = L[to+1];
+  let k = prev && next ? (sortKey(prev) + sortKey(next)) / 2 : prev ? sortKey(prev) + 1000 : sortKey(next) - 1000;
+  if (prev && next && (k <= sortKey(prev) || k >= sortKey(next))){
+    // Kein Platz mehr zwischen den Nachbarn: alle neu durchnummerieren
+    L.forEach((x, n) => { x.order = (n + 1) * 1000; });
+    renderShop();
+    safe(async () => { for (const x of L) await shopStore.update(x.id, {order: x.order}); });
+    return;
+  }
+  it.order = k; renderShop();
+  safe(() => shopStore.update(id, {order: k}));
+}
+function bucketMove(id, to){
+  const L = bucketSorted(), from = L.findIndex(i => i.id === id);
+  if (from < 0 || to < 0 || to >= L.length || to === from) return;
+  const [it] = L.splice(from, 1); L.splice(to, 0, it);
+  const prev = L[to-1], next = L[to+1];
+  let k = prev && next ? (sortKey(prev) + sortKey(next)) / 2 : prev ? sortKey(prev) + 1000 : sortKey(next) - 1000;
+  if (prev && next && (k <= sortKey(prev) || k >= sortKey(next))){
+    L.forEach((x, n) => { x.order = (n + 1) * 1000; });
+    renderBucket();
+    safe(async () => { for (const x of L) await bucketStore.update(x.id, {order: x.order}); });
+    return;
+  }
+  it.order = k; renderBucket();
+  safe(() => bucketStore.update(id, {order: k}));
+}
+/* Generische Ziehen-zum-Sortieren-Logik, von Shopping- und Bucket-Liste geteilt */
+function rowDragStart(e, handle, rowSel, moveFn, pendingKey, renderFn){
+  const row = handle.closest(rowSel), listEl = row && row.parentElement;
+  if (!row || !listEl) return;
+  e.preventDefault();
+  const rows = [...listEl.children], idx = rows.indexOf(row), id = row.dataset.id;
+  const tops = rows.map(r => { const b = r.getBoundingClientRect(); return {top: b.top + scrollY, h: b.height}; });
+  const gap = rows.length > 1 ? Math.max(0, tops[1].top - tops[0].top - tops[0].h) : 8;
+  const shiftBy = tops[idx].h + gap, startY = e.pageY;
+  let to = idx, moved = false;
+  S.dragging = true;
+  row.classList.add("dragging"); rows.forEach(r => { if (r !== row) r.classList.add("shift"); });
+  try { handle.setPointerCapture(e.pointerId); } catch(_){}
+  const move = ev => {
+    const dy = ev.pageY - startY; if (Math.abs(dy) > 3) moved = true;
+    row.style.transform = `translateY(${dy}px)`;
+    const cy = tops[idx].top + tops[idx].h / 2 + dy;
+    to = idx;
+    rows.forEach((r, n) => { if (n === idx) return; const mid = tops[n].top + tops[n].h / 2;
+      if (n < idx && cy < mid) to = Math.min(to, n); if (n > idx && cy > mid) to = Math.max(to, n); });
+    rows.forEach((r, n) => { if (n === idx) return; let t = 0;
+      if (idx < to && n > idx && n <= to) t = -shiftBy; if (to < idx && n >= to && n < idx) t = shiftBy;
+      r.style.transform = t ? `translateY(${t}px)` : ""; });
+    if (ev.clientY < 70) scrollBy(0, -14); else if (ev.clientY > innerHeight - 70) scrollBy(0, 14);
+  };
+  const end = () => {
+    handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", end); handle.removeEventListener("pointercancel", end);
+    rows.forEach(r => { r.style.transform = ""; r.classList.remove("shift", "dragging"); });
+    S.dragging = false;
+    if (moved && to !== idx) moveFn(id, to);
+    else if (S[pendingKey]){ S[pendingKey] = false; renderFn(); }
+  };
+  handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", end); handle.addEventListener("pointercancel", end);
+}
+const shopDragStart = (e, h) => rowDragStart(e, h, ".srow", shopMove, "shopPending", renderShop);
+const bucketDragStart = (e, h) => rowDragStart(e, h, ".brow", bucketMove, "bucketPending", renderBucket);
+document.addEventListener("pointerdown", e => {
+  const h = e.target.closest && e.target.closest(".dragh");
+  if (!h || !(e.button === 0 || e.pointerType !== "mouse")) return;
+  if (h.closest(".srow")) shopDragStart(e, h);
+  else if (h.closest(".brow")) bucketDragStart(e, h);
+});
+document.addEventListener("keydown", e => {
+  const h = e.target.closest && e.target.closest(".dragh");
+  if (h && (e.key === "ArrowUp" || e.key === "ArrowDown")){
+    e.preventDefault();
+    const id = h.dataset.id;
+    if (h.closest(".srow")){ const L = shopSorted(), n = L.findIndex(i => i.id === id); shopMove(id, n + (e.key === "ArrowUp" ? -1 : 1)); }
+    else if (h.closest(".brow")){ const L = bucketSorted(), n = L.findIndex(i => i.id === id); bucketMove(id, n + (e.key === "ArrowUp" ? -1 : 1)); }
+    setTimeout(() => document.querySelector(`.dragh[data-id="${CSS.escape(id)}"]`)?.focus(), 0);
+    return;
+  }
+  const head = e.target.closest && e.target.closest(".shead");
+  if (head && e.target === head && (e.key === "Enter" || e.key === " ")){ e.preventDefault(); head.click(); }
+});
+
+function shopOpen(id){
+  S.shopPhotos.forEach(x => x.url && URL.revokeObjectURL(x.url));
+  const it = id && id !== "new" ? shopById(id) : null;
+  Object.assign(S, {shopEdit:id, shopPhotos: it ? photosOf(it).map(pid => ({id:pid})) : [], shopDel:null});
+  S.shopPhVer++;
+  $("shopFormSlot").dataset.for = "";
+  renderShop();
+  if (id) $("shopFormSlot").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+const assetErr = c => c==="too_large" ? "Das Foto ist zu groß." : c==="unsupported_type" ? "Dieses Bildformat geht nicht. Nimm ein JPG oder PNG."
+  : c==="quota_or_state" ? "Der Speicher für Fotos ist voll. Lösche alte Items mit Foto." : c==="rate_limited" ? "Zu viele Uploads auf einmal. Warte kurz."
+  : c==="upstream_auth" ? "Bitte lade die Seite neu oder melde dich neu an." : "Das Foto konnte nicht hochgeladen werden. Probier es nochmal.";
+
+async function shopSubmit(){
+  if (S.shopBusy) return;
+  const name = $("sName").value.trim(); if (!name) return;
+  const was = S.shopEdit, old = was === "new" ? {} : (shopById(was) || {});
+  const fixed = $("sFixed").checked;
+  const dims = $("sDims").value.trim();
+  const o = fixed ? { name, desc:$("sDesc").value.trim(), dims, price:parseY($("sPrice").value), fixed:true }
+    : { name, desc:$("sDesc").value.trim(), dims, price:parseY($("sPrice").value), min:parseY($("sMin").value), max:parseY($("sMax").value), fixed:false };
+  const P = S.shopPhotos, nNew = P.filter(x => x.file).length;
+  S.shopBusy = true; $("sSave").disabled = true; $("sSave").textContent = nNew ? (nNew > 1 ? `${nNew} Fotos werden hochgeladen …` : "Foto wird hochgeladen …") : "Speichert …";
+  try {
+    const ids = [];
+    for (const x of P){
+      if (x.id){ ids.push(x.id); continue; }
+      if (!S.assets) continue;
+      let blob;
+      try { blob = await shrinkImage(x.file); }
+      catch(e){ throw {code:"decode"}; }
+      const r = await S.assets.upload(blob, {type:"image/jpeg"});
+      ids.push(r.id); x.id = r.id;
+    }
+    o.photos = ids; o.photo = ids[0] || null;
+    const drop = was === "new" ? [] : photosOf(old).filter(id => !ids.includes(id));
+    if (was === "new"){ o.bought = false; o.created = Date.now(); await shopStore.add(o); }
+    else await shopStore.update(was, o);
+    if (S.assets) drop.forEach(id => S.assets.delete(id).catch(()=>{}));
+    S.shopSel[was] = 0;
+    S.shopBusy = false; shopOpen(null); toast(was==="new" ? "Item hinzugefügt" : "Gespeichert");
+  } catch(e){
+    S.shopBusy = false;
+    const b = $("sSave"); if (b){ b.disabled = false; b.textContent = was==="new"?"Hinzufügen":"Speichern"; }
+    toast(e && e.code==="decode" ? "Dieses Bild kann der Browser nicht lesen. Nimm ein JPG oder PNG." : e && e.code && !["invalid_argument","quota_exceeded","unavailable"].includes(e.code) ? assetErr(e.code) : "Speichern hat nicht geklappt. Versuch es nochmal.");
+  }
+}
+
+/* ---------- Fehlende Aufnahmen erstellen ---------- */
+const VT_TASK = "trig_01Qk79vHETmKr2eRQSKRPtr7";
+const VT_WAIT = 15 * 60 * 1000;
+const needsAudio = i => (i.jp||"").trim() && !(i.audio && i.audioFor === (i.jp||"").trim());
+S.vtBusy = false; S.vtMsg = "";
+function renderVT(){
+  const box = $("vtBar");
+  if (!S.loaded){ box.innerHTML = ""; return; }
+  const n = S.items.filter(needsAudio).length;
+  let started = 0; try { started = +(localStorage.getItem("jp.vtStarted")||0); } catch(e){}
+  const running = Date.now() - started < VT_WAIT;
+  if (!n){ box.innerHTML = `<div class="aibar"><button class="btn" disabled>▶ Fehlende Aufnahmen erstellen</button><span class="status">Alle Karten haben eine Aufnahme.</span></div>`; return; }
+  box.innerHTML = `<div class="aibar">
+    <button class="btn" data-act="vtGo" ${S.vtBusy||running?"disabled":""}>${S.vtBusy?"Wird gestartet …":running?"Aufnahmen werden erstellt …":`▶ Fehlende Aufnahmen erstellen (${n})`}</button>
+    <span class="status">${esc(S.vtMsg || (running ? "Dauert ein paar Minuten. Die Aufnahmen erscheinen dann von selbst." : `${n} Karte${n===1?"":"n"} ohne Aufnahme.`))}</span>
+  </div>`;
+}
+async function vtGo(){
+  if (S.vtBusy) return;
+  S.vtBusy = true; S.vtMsg = ""; renderVT();
+  let mcp = null;
+  try { mcp = window.claude && typeof window.claude.use === "function" ? await window.claude.use("mcp") : null; } catch(e){}
+  if (!mcp){ S.vtBusy = false; S.vtMsg = "Das geht in dieser Ansicht nicht. Öffne die Seite in claude.ai oder sag Claude im Chat Bescheid."; renderVT(); return; }
+  try {
+    await mcp.callTool("Claude Code Remote", "fire_trigger", {trigger_id: VT_TASK});
+    try { localStorage.setItem("jp.vtStarted", String(Date.now())); } catch(e){}
+    S.vtMsg = "Läuft. Dauert ein paar Minuten, die Aufnahmen erscheinen dann von selbst.";
+    setTimeout(renderVT, VT_WAIT + 1000);
+  } catch(e){
+    const c = e && e.code;
+    S.vtMsg = c==="not_in_manifest" || c==="approval_required" || c==="consent_required" ? "Der Start wurde nicht erlaubt. Drück nochmal und erlaube den Zugriff."
+      : c==="server_not_connected" || c==="needs_reauth" ? "Die Verbindung zu Claude Code fehlt. Verbinde sie in claude.ai unter Einstellungen → Connectors."
+      : c==="tool_error" ? "Die Aufgabe konnte nicht gestartet werden: " + (e.message||"")
+      : c==="server_unavailable" || c==="upstream_error" ? "Gerade nicht erreichbar. Probier es in einer Minute nochmal."
+      : "Das hat nicht geklappt. Probier es nochmal.";
+  }
+  S.vtBusy = false; renderVT();
+}
+
+/* ---------- Vorschläge von Claude ---------- */
+function renderAI(){
+  const box = $("aiSug");
+  if (!S.loaded){ box.innerHTML = ""; return; }
+  const list = S.aiSugs.filter(p => !haveP(p) && !S.sugSkip.has(p.ro));
+  box.innerHTML = `<div class="aibox">
+    <div class="aibar"><button class="btn" data-act="aiGen" ${S.aiBusy?"disabled":""}>${S.aiBusy?"Claude überlegt …":"✦ Neue Vorschläge von Claude"}</button>${S.aiErr?`<span class="status">${esc(S.aiErr)}</span>`:""}</div>
+    ${list.length ? `<div class="rows">${list.map(p => { const k = S.aiSugs.indexOf(p); return `
+      <div class="item">
+        <div class="de">${esc(p.de)}${p.ctx?`<div class="ctx">${esc(p.ctx)}</div>`:""}</div>
+        <div class="jpcol">${p.jp?`<span class="jp" lang="ja">${esc(p.jp)}</span>`:""}<span class="ro">${esc(p.ro)}</span></div>
+        <div class="meta"><span class="tag">${esc(p.cat)}</span><button class="mini" data-act="aiAdd" data-k="${k}">Hinzufügen</button><button class="mini danger" data-act="aiDrop" data-k="${k}">Verwerfen</button></div>
+      </div>`; }).join("")}</div><span class="status">Von Claude erzeugt. Kurz gegenlesen, bevor du es lernst.</span>` : ""}
+  </div>`;
+}
+async function aiGen(){
+  if (S.aiBusy) return;
+  S.aiBusy = true; S.aiErr = ""; renderAI();
+  if (!S.sample && window.claude && typeof window.claude.use === "function"){
+    try { S.sample = await window.claude.use("sample"); } catch(e){}
+  }
+  if (!S.sample){
+    S.aiBusy = false;
+    S.aiErr = "Claude-Vorschläge sind in dieser Ansicht gerade nicht verfügbar. Lade die Seite neu oder öffne sie in claude.ai.";
+    renderAI(); return;
+  }
+  const haveList = S.items.map(i => `- ${i.de} = ${i.ro}`).join("\n") || "(noch leer)";
+  const skipList = [...S.sugSkip].join(", ") || "(keine)";
+  const catList = [...new Set([...cats(), "Allgemein", "Begrüßungen", "Restaurant", "Shopping", "Unterwegs", "Hotel"])].join(", ");
+  const prompt = `Du hilfst einem deutschen Touristen, der bald nach Japan reist. Schlage 5 neue japanische Phrasen oder Wörter vor, die man als Tourist im Alltag wirklich sehr häufig braucht.
+
+Sie dürfen NICHT schon in seiner Liste stehen, auch keine bloßen Varianten davon:
+${haveList}
+
+Diese hat er bereits abgelehnt (nicht wieder vorschlagen): ${skipList}
+
+Regeln:
+- Korrektes, natürliches Japanisch in höflich-neutraler Standardform (desu/masu), außer bei festen Ausdrücken.
+- "de": kurze deutsche Bedeutung.
+- "ctx": ein kurzer deutscher Satz, wann man es benutzt, endet mit Punkt.
+- "ro": Hepburn-Romaji mit Längungszeichen (ō, ū), beginnt mit Großbuchstaben.
+- "jp": normale japanische Schreibweise (Kanji/Kana).
+- Endet "de" mit . ! oder ?, endet "ro" mit demselben Zeichen und "jp" mit 。 ！ oder ？. Einzelwörter ohne Satzzeichen.
+- "cat": genau eine von: ${catList}.
+
+Antworte nur mit JSON in dieser Form:
+{"phrases":[{"de":"","ctx":"","ro":"","jp":"","cat":""}]}`;
+  try {
+    const out = await S.sample.json(prompt, {cache:false});
+    const arr = Array.isArray(out) ? out : (out && Array.isArray(out.phrases) ? out.phrases : []);
+    const clean = arr.filter(p => p && p.de && p.ro).map(p => ({
+      de:String(p.de).trim(), ctx:String(p.ctx||"").trim(), ro:String(p.ro).trim(),
+      jp:String(p.jp||"").trim(), cat:String(p.cat||"Allgemein").trim()
+    })).filter(p => !haveP(p) && !S.sugSkip.has(p.ro));
+    S.aiSugs = clean;
+    if (!clean.length) S.aiErr = "Diesmal kam nichts Neues. Probier es nochmal.";
+  } catch(e){
+    const c = e && e.code;
+    S.aiErr = c==="rate_limited" ? "Gerade zu viele Anfragen. Warte kurz und probier es dann nochmal."
+      : c==="not_granted" ? "Claude-Vorschläge sind für diese Seite nicht erlaubt. Du kannst das in den Berechtigungen der Seite ändern."
+      : c==="cancelled" ? "" : "Das hat nicht geklappt. Probier es nochmal.";
+  }
+  S.aiBusy = false; renderAI();
+}
+
+/* ---------- Vorschläge ---------- */
+const haveP = p => S.sugAdded.has(p.ro) || S.items.some(i => (i.jp && norm(i.jp)===norm(p.jp)) || norm(i.ro)===norm(p.ro));
+const sugCands = () => POOL.filter(p => !haveP(p) && !S.sugSkip.has(p.ro));
+function pickSug(excl){
+  const c = sugCands(), d = c.filter(p => p !== excl);
+  const from = d.length ? d : c;
+  S.sug = from.length ? from[Math.floor(Math.random()*from.length)] : null;
+}
+function renderSuggest(){
+  const box = $("suggest");
+  if (!S.loaded){ box.innerHTML=""; return; }
+  if (!S.sug || haveP(S.sug) || S.sugSkip.has(S.sug.ro)) pickSug();
+  const p = S.sug, left = sugCands().length;
+  if (!p){ box.innerHTML = ""; return; }
+  box.innerHTML = `<div class="suggest">
+    <div class="head"><span class="lbl">Vorschlag · oft gebraucht</span><span class="stat">${left} übrig</span></div>
+    <div style="min-width:0">
+      <div class="sde">${esc(p.de)}</div>
+      <div class="sctx">${esc(p.ctx)} · ${esc(p.cat)}</div>
+      <div class="sjp"><span class="jp" lang="ja">${esc(p.jp)}</span><span class="ro">${esc(p.ro)}</span></div>
+    </div>
+    <div class="sbtns">
+      <button class="btn primary" data-act="sugAdd">Hinzufügen</button>
+      <button class="btn" data-act="sugNext">Anderer</button>
+      <button class="mini" data-act="sugSkip">Brauch ich nicht</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- Speicher ---------- */
+const store = {
+  async add(o){
+    o.created = Date.now(); o.ok = 0; o.miss = 0;
+    if (S.db) await S.db.collection("phrases").add(o);
+    else { o.id = "l" + Math.random().toString(36).slice(2,10); S.items.push(o); saveLocal(); onData(); }
+  },
+  async update(id, patch){
+    if (S.db) await S.db.doc("phrases/" + id).update(patch);
+    else { Object.assign(S.items.find(i=>i.id===id) || {}, patch); saveLocal(); onData(); }
+  },
+  async remove(id){
+    if (S.db) await S.db.doc("phrases/" + id).delete();
+    else { S.items = S.items.filter(i=>i.id!==id); saveLocal(); onData(); }
+  }
+};
+function saveLocal(){ ls.set("jp.items", S.items); }
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,3200); }
+async function safe(fn){ try{ await fn(); } catch(e){ toast(e?.code==="quota_exceeded" ? "Speicher voll. Lösche ein paar Einträge." : "Speichern hat nicht geklappt. Versuch es nochmal."); } }
+
+function startLocal(){
+  S.mode = "local";
+  let items = ls.get("jp.items");
+  if (!Array.isArray(items)) { items = FALLBACK.map((o,i)=>({...o,id:"l"+i,created:i,ok:0,miss:0})); }
+  S.items = items; S.loaded = true; onData();
+  $("status").textContent = "Gespeichert nur in diesem Browser.";
+  const sh = ls.get("jp.shop"); S.shop = Array.isArray(sh) ? sh : [];
+  const fx = ls.get("jp.fx"); if (fx && fx.rate > 0) S.fx = fx;
+  S.shopLoaded = true;
+  const bk = ls.get("jp.bucket"); S.bucket = Array.isArray(bk) ? bk : [];
+  S.bucketLoaded = true;
+  renderAll();
+}
+async function init(){
+  renderAll();
+  const c = window.claude;
+  if (!c || typeof c.use !== "function") return startLocal();
+  c.use("sample").then(s => { S.sample = s; renderAI(); }).catch(() => {});
+  try {
+    const db = await c.use("db");
+    if (!db) return startLocal();
+    S.db = db; S.mode = "db";
+    db.collection("phrases").orderBy("created").onSnapshot(snap => {
+      S.items = snap.docs.map(d => ({id:d.id, ...d.data()}));
+      S.loaded = true; onData();
+    }, () => { S.db = null; startLocal(); });
+    db.collection("shop").orderBy("created").onSnapshot(snap => {
+      S.shop = snap.docs.map(d => ({id:d.id, ...d.data()}));
+      S.shopLoaded = true; renderAll();
+    }, () => { S.shopLoaded = true; renderAll(); });
+    db.collection("bucket").orderBy("created").onSnapshot(snap => {
+      S.bucket = snap.docs.map(d => ({id:d.id, ...d.data()}));
+      S.bucketLoaded = true; renderAll();
+    }, () => { S.bucketLoaded = true; renderAll(); });
+    let fxSeen = false;
+    db.doc("settings/fx").onSnapshot(s => {
+      const d = s.exists ? s.data() : null;
+      if (d && +d.rate > 0){
+        const prev = S.fx.updated || 0;
+        S.fx = {rate:+d.rate, date:d.date||"", updated:+d.updated||0, error:d.error||""};
+        if (fxSeen && S.fx.updated !== prev) toast("Kurs aktualisiert");
+      }
+      fxSeen = true;
+      renderShop();
+    }, () => { fxSeen = true; });
+    let researchSeen = false;
+    db.doc("settings/research").onSnapshot(s => {
+      const d = s.exists ? s.data() : null;
+      if (d){
+        const prev = S.research.updated || 0;
+        S.research = {updated:+d.updated||0, count:+d.count||0};
+        if (researchSeen && S.research.updated !== prev) toast(`Preise aktualisiert (${S.research.count} Items)`);
+      }
+      researchSeen = true;
+      renderShop();
+    }, () => {});
+    c.use("assets").then(a => { S.assets = a; renderShop(); }).catch(() => {});
+    $("status").textContent = "Wird online gespeichert und auf allen deinen Geräten synchronisiert.";
+  } catch(e){ startLocal(); }
+}
+
+/* ---------- Ableitungen ---------- */
+const cats = () => [...new Set(S.items.map(i => (i.cat||"Ohne Kategorie").trim()))].sort((a,b)=>a.localeCompare(b,"de"));
+const catOf = i => (i.cat||"Ohne Kategorie").trim();
+const isHard = i => (i.miss||0) > 0 && (i.miss||0) >= (i.ok||0);
+const byId = id => S.items.find(i => i.id === id);
+function shuffle(a){ a=[...a]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+function deckPool(){
+  let pool = S.items.filter(i => S.deckCat==="Alle" || catOf(i)===S.deckCat);
+  if (S.hard) pool = pool.filter(isHard);
+  return pool;
+}
+function buildDeck(ids){
+  let d = shuffle(deckPool().map(i=>i.id));
+  if (S.limit > 0) d = d.slice(0, S.limit);
+  S.deck = ids ? ids.filter(byId) : d;
+  S.idx = 0; S.flipped = false; S.res = {ok:0, miss:[]};
+}
+
+let firstData = true;
+function onData(){
+  if (firstData && S.loaded){ firstData=false; if (S.deckCat!=="Alle" && !cats().includes(S.deckCat)) S.deckCat="Alle"; buildDeck(); }
+  // Karten, die gelöscht wurden, aus dem laufenden Stapel nehmen
+  const before = S.deck.length;
+  S.deck = S.deck.filter(byId);
+  if (S.deck.length !== before && S.idx > S.deck.length) S.idx = S.deck.length;
+  if (S.deck.length === 0 && S.idx === 0 && S.items.length) buildDeck();
+  renderAll();
+}
+
+/* ---------- Render ---------- */
+function renderAll(){
+  $("countAll").textContent = S.items.length;
+  $("countShop").textContent = S.shop.filter(i=>!i.bought).length;
+  $("tabCards").setAttribute("aria-pressed", S.view==="cards");
+  $("tabList").setAttribute("aria-pressed", S.view==="list");
+  $("tabShop").setAttribute("aria-pressed", S.view==="shop");
+  $("tabBucket").setAttribute("aria-pressed", S.view==="bucket");
+  $("viewCards").hidden = S.view!=="cards";
+  $("viewList").hidden = S.view!=="list";
+  $("viewShop").hidden = S.view!=="shop";
+  $("viewBucket").hidden = S.view!=="bucket";
+  renderShop();
+  renderBucket();
+  $("catList").innerHTML = cats().map(c=>`<option value="${esc(c)}">`).join("");
+  renderCards(); renderList();
+}
+
+function renderCards(){
+  const cs = cats();
+  $("deckCat").innerHTML = ["Alle",...cs].map(c => {
+    const n = c==="Alle" ? S.items.length : S.items.filter(i=>catOf(i)===c).length;
+    return `<option value="${esc(c)}" ${c===S.deckCat?"selected":""}>${esc(c)} (${n})</option>`;
+  }).join("");
+  $("dirBtn").textContent = S.dirJp ? "Japanisch → Deutsch" : "Deutsch → Japanisch";
+  $("dirBtn").setAttribute("aria-pressed", S.dirJp);
+  $("hardBtn").setAttribute("aria-pressed", S.hard);
+  const r = $("limitR"), n = deckPool().length;
+  if (document.activeElement !== r){
+    r.max = Math.max(n,1);
+    r.value = S.limit > 0 ? Math.min(S.limit, n) : n;
+    r.disabled = n < 2;
+    limitLabel(+r.value, n);
+  }
+
+  const total = S.deck.length, pos = Math.min(S.idx, total);
+  $("progTxt").textContent = `${pos} / ${total}`;
+  $("progBar").style.width = total ? (pos/total*100)+"%" : "0";
+  $("scoreTxt").textContent = total ? `✓ ${S.res.ok}  ✗ ${S.res.miss.length}` : "";
+
+  const area = $("cardArea");
+  if (!S.loaded){ area.innerHTML = `<div class="empty">Deine Phrasen werden geladen …</div>`; return; }
+  if (!S.items.length){
+    area.innerHTML = `<div class="empty"><strong>Noch keine Phrasen</strong><span>Leg in der Liste deine ersten Wörter und Sätze an.</span><button class="btn primary" data-act="gotoAdd">Erste Phrase anlegen</button></div>`; return;
+  }
+  if (!total){
+    area.innerHTML = `<div class="empty"><strong>Keine Karten in dieser Auswahl</strong><span>${S.hard ? "Gerade ist nichts als schwierig markiert. Gut so." : "Wähl eine andere Kategorie."}</span></div>`; return;
+  }
+  if (S.idx >= total){
+    const pct = Math.round(S.res.ok/total*100);
+    area.innerHTML = `<div class="done"><span class="lbl">Runde fertig</span><div class="score">${S.res.ok} / ${total}</div><span class="hint">${pct}% gewusst${S.res.miss.length?`, ${S.res.miss.length} zum Wiederholen`:""}</span>
+      <div class="row">${S.res.miss.length?`<button class="btn primary" data-act="redoMiss">Fehler wiederholen</button>`:""}<button class="btn" data-act="reshuffle">Neu mischen</button></div></div>`;
+    return;
+  }
+  const it = byId(S.deck[S.idx]);
+  const deSide = `<div class="big-de">${esc(it.de)}</div>${it.ctx?`<div class="ctx">${esc(it.ctx)}</div>`:""}`;
+  const jpSide = `${it.jp?`<div class="big-jp" lang="ja">${esc(it.jp)}</div>`:""}<div class="romaji">${esc(it.ro)}</div>`;
+  const speak = (it.jp||it.ro) ? `<div class="audio">
+      <button class="speak" data-act="speak" aria-label="Aussprache anhören">▶ Anhören</button>
+      <button class="speak" data-act="speakSlow" aria-label="Langsam anhören">▶ Langsam</button>
+    </div><div class="audiomsg" id="audioMsg" hidden></div>` : "";
+  const front = S.dirJp ? `${jpSide}` : deSide;
+  const back = S.dirJp ? `${deSide}${it.note?`<div class="note">${esc(it.note)}</div>`:""}${speak}` : `${jpSide}${it.note?`<div class="note">${esc(it.note)}</div>`:""}${speak}`;
+  const strip = (side) => `<div class="strip"><span>${esc(catOf(it))}</span><span class="side">${side}</span></div>`;
+  area.innerHTML = `
+    <div class="stage">
+      <div class="card ${S.flipped?"flipped":""}" id="card" role="button" tabindex="0" aria-label="Karte umdrehen">
+        <div class="face front"><div class="body">${front}<span class="hint">Tippen zum Umdrehen</span></div>${strip(S.dirJp?"日本語":"DEUTSCH")}</div>
+        <div class="face back"><div class="body">${back}</div>${strip(S.dirJp?"DEUTSCH":"日本語 · RŌMAJI")}</div>
+      </div>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      ${S.flipped
+        ? `<button class="btn miss" data-act="miss">Nochmal<span class="kbd">1</span></button><button class="btn ok" data-act="ok">Gewusst<span class="kbd">2</span></button>`
+        : `<button class="btn primary" data-act="flip" style="grid-column:1/-1">Umdrehen<span class="kbd">Leertaste</span></button>`}
+    </div>`;
+}
+
+function renderList(){
+  renderSuggest(); renderAI(); renderVT();
+  const cs = cats();
+  if (S.listCat!=="Alle" && !cs.includes(S.listCat)) S.listCat="Alle";
+  $("listChips").innerHTML = ["Alle",...cs].map(c=>`<button class="chipbtn" data-cat="${esc(c)}" aria-pressed="${c===S.listCat}">${esc(c)}</button>`).join("");
+
+  const slot = $("formSlot");
+  if (S.editing){
+    const e = S.editing==="new" ? {de:"",ctx:"",ro:"",jp:"",cat:S.listCat!=="Alle"?S.listCat:"",note:""} : byId(S.editing) || {};
+    if (!slot.querySelector("form") || slot.dataset.for !== S.editing){
+      slot.dataset.for = S.editing;
+      slot.innerHTML = `<form class="edit" id="editForm">
+        <div class="field full"><label class="lbl" for="fDe">Deutsch</label><input type="text" id="fDe" required value="${esc(e.de)}" placeholder="z. B. Wo ist der Bahnhof?"></div>
+        <div class="field full"><label class="lbl" for="fCtx">Kontext (optional)</label><input type="text" id="fCtx" value="${esc(e.ctx)}" placeholder="z. B. Passanten auf der Straße fragen"></div>
+        <div class="field"><label class="lbl" for="fRo">Romaji</label><input type="text" id="fRo" required value="${esc(e.ro)}" placeholder="eki wa doko desu ka"></div>
+        <div class="field"><label class="lbl" for="fJp">Japanisch</label><input type="text" id="fJp" class="jpin" lang="ja" value="${esc(e.jp)}" placeholder="駅はどこですか"></div>
+        <div class="field"><label class="lbl" for="fCat">Kategorie</label><input type="text" id="fCat" list="catList" value="${esc(e.cat)}" placeholder="z. B. Restaurant"></div>
+        <div class="field"><label class="lbl" for="fNote">Notiz (optional)</label><input type="text" id="fNote" value="${esc(e.note)}" placeholder="z. B. höfliche Form"></div>
+        <div class="btns"><button type="button" class="btn" data-act="cancel">Abbrechen</button><button type="submit" class="btn primary">${S.editing==="new"?"Hinzufügen":"Speichern"}</button></div>
+      </form>`;
+      setTimeout(()=>$("fDe")?.focus(), 0);
+    }
+  } else { slot.innerHTML = ""; slot.dataset.for = ""; }
+
+  const q = S.q.trim().toLowerCase();
+  const list = S.items.filter(i => (S.listCat==="Alle" || catOf(i)===S.listCat) &&
+    (!q || [i.de,i.ctx,i.ro,i.jp,i.note].some(v => String(v||"").toLowerCase().includes(q))));
+  const area = $("listArea");
+  if (!S.loaded){ area.innerHTML = `<div class="empty">Deine Phrasen werden geladen …</div>`; return; }
+  if (!S.items.length){ area.innerHTML = `<div class="empty"><strong>Noch leer</strong><span>Füg oben deine erste Phrase hinzu.</span></div>`; return; }
+  if (!list.length){ area.innerHTML = `<div class="empty">Nichts gefunden für „${esc(S.q)}“.</div>`; return; }
+
+  const groups = {};
+  list.forEach(i => (groups[catOf(i)] ||= []).push(i));
+  area.innerHTML = Object.keys(groups).sort((a,b)=>a.localeCompare(b,"de")).map(g => `
+    <div class="group"><h2><span>${esc(g)}</span><span class="n">${groups[g].length}</span></h2>
+      <div class="rows">${groups[g].map(i => `
+        <div class="item">
+          <div class="de">${esc(i.de)}${i.ctx?`<div class="ctx">${esc(i.ctx)}</div>`:""}${i.note?`<div class="sub">${esc(i.note)}</div>`:""}</div>
+          <div class="jpcol">${i.jp?`<span class="jp" lang="ja">${esc(i.jp)}</span>`:""}<span class="ro">${esc(i.ro)}</span></div>
+          <div class="meta">
+            ${i.ex?`<span class="tag">Beispiel</span>`:""}
+            ${(i.ok||i.miss)?`<span class="stat" title="gewusst / nicht gewusst"><b>✓${i.ok||0}</b> <s>✗${i.miss||0}</s></span>`:""}
+            ${S.confirmDel===i.id
+              ? `<span class="stat">Löschen?</span><button class="mini danger" data-act="delYes" data-id="${i.id}">Ja</button><button class="mini" data-act="delNo">Nein</button>`
+              : `<button class="mini" data-act="edit" data-id="${i.id}">Bearbeiten</button><button class="mini danger" data-act="del" data-id="${i.id}">Löschen</button>`}
+          </div>
+        </div>`).join("")}</div></div>`).join("");
+}
+
+/* ---------- Aktionen ---------- */
+function setView(v){ S.view=v; ls.set("jp.view",v); renderAll(); }
+function flip(){ if (S.idx < S.deck.length){ S.flipped = !S.flipped; renderCards(); } }
+function answer(ok){
+  if (!S.flipped || S.idx >= S.deck.length) return;
+  const it = byId(S.deck[S.idx]);
+  if (ok) S.res.ok++; else S.res.miss.push(it.id);
+  S.idx++; S.flipped=false; renderCards();
+  safe(() => store.update(it.id, ok ? {ok:(it.ok||0)+1} : {miss:(it.miss||0)+1}));
+}
+function audioMsg(t){ const m = $("audioMsg"); if (m){ m.textContent = t; m.hidden = !t; } }
+function jaVoices(){
+  return new Promise(res => {
+    const find = () => speechSynthesis.getVoices().filter(v => /^ja/i.test(v.lang || ""));
+    const now = find(); if (now.length || speechSynthesis.getVoices().length) return res(now);
+    const t = setTimeout(() => res(find()), 1500);
+    speechSynthesis.addEventListener("voiceschanged", () => { clearTimeout(t); res(find()); }, {once:true});
+  });
+}
+let curAudio = null;
+async function speak(slow){
+  const it = byId(S.deck[S.idx]); if (!it) return;
+  const text = it.jp || it.ro;
+  audioMsg("");
+  // 1) Aufnahme zur Karte, falls vorhanden und zum aktuellen Text passend
+  if (it.audio && it.audioFor === text){
+    try {
+      if (curAudio) curAudio.pause();
+      curAudio = new Audio(it.audio);
+      curAudio.preservesPitch = true;
+      curAudio.playbackRate = slow ? 0.7 : 1;
+      await curAudio.play();
+      return;
+    } catch(e){ /* weiter mit Sprachausgabe des Geräts */ }
+  }
+  // 2) Sprachausgabe des Geräts
+  const fallback = " Für diese Karte gibt es noch keine Aufnahme. In der Liste kannst du sie mit „Fehlende Aufnahmen erstellen“ anlegen lassen.";
+  if (!("speechSynthesis" in window)) return audioMsg("Dein Browser hat keine Sprachausgabe." + fallback);
+  try {
+    const vs = await jaVoices();
+    if (!vs.length) return audioMsg("Auf diesem Gerät ist keine japanische Stimme installiert." + fallback);
+    const v = vs.find(v => /google|nanami|kyoko|otoya|haruka/i.test(v.name)) || vs[0];
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ja-JP"; u.voice = v; u.rate = slow ? 0.6 : 0.9;
+    let started = false;
+    u.onstart = () => { started = true; };
+    u.onerror = e => { if (e.error !== "interrupted" && e.error !== "canceled") audioMsg("Die Sprachausgabe wurde blockiert." + fallback); };
+    speechSynthesis.speak(u);
+    setTimeout(() => { if (!started && !speechSynthesis.speaking) audioMsg("Die Sprachausgabe hat nicht gestartet." + fallback); }, 2500);
+  } catch(e){ audioMsg("Die Sprachausgabe ist hier nicht verfügbar." + fallback); }
+}
+
+$("tabCards").onclick = () => setView("cards");
+$("tabList").onclick = () => setView("list");
+$("tabShop").onclick = () => setView("shop");
+$("tabBucket").onclick = () => setView("bucket");
+$("deckCat").onchange = e => { S.deckCat = e.target.value; ls.set("jp.cat",S.deckCat); buildDeck(); renderCards(); };
+$("dirBtn").onclick = () => { S.dirJp = !S.dirJp; ls.set("jp.dir",S.dirJp); S.flipped=false; renderCards(); };
+$("hardBtn").onclick = () => { S.hard = !S.hard; buildDeck(); renderCards(); };
+function limitLabel(v, n){ $("limitTxt").textContent = v >= n ? `Alle (${n})` : `${v} von ${n}`; }
+$("limitR").oninput = e => limitLabel(+e.target.value, +e.target.max);
+$("limitR").onchange = e => {
+  const v = +e.target.value, n = +e.target.max;
+  S.limit = v >= n ? 0 : v; ls.set("jp.limit", S.limit);
+  e.target.blur(); buildDeck(); renderCards();
+};
+$("q").oninput = e => { S.q = e.target.value; renderList(); };
+$("addBtn").onclick = () => { S.editing="new"; renderList(); };
+
+document.addEventListener("click", e => {
+  const chip = e.target.closest("[data-cat]");
+  if (chip){ S.listCat = chip.dataset.cat; renderList(); return; }
+  if (e.target.closest("a")) return;
+  const b = e.target.closest("[data-act]");
+  if (!b){ if (e.target.closest("#card")) flip(); return; }
+  const id = b.dataset.id;
+  switch(b.dataset.act){
+    case "flip": flip(); break;
+    case "ok": answer(true); break;
+    case "miss": answer(false); break;
+    case "speak": e.stopPropagation(); speak(false); break;
+    case "speakSlow": e.stopPropagation(); speak(true); break;
+    case "redoMiss": buildDeck(shuffle(S.res.miss)); renderCards(); break;
+    case "reshuffle": buildDeck(); renderCards(); break;
+    case "gotoAdd": S.editing="new"; setView("list"); break;
+    case "edit": S.editing=id; S.confirmDel=null; renderList(); window.scrollTo({top:0,behavior:"smooth"}); break;
+    case "cancel": S.editing=null; renderList(); break;
+    case "del": S.confirmDel=id; renderList(); break;
+    case "delNo": S.confirmDel=null; renderList(); break;
+    case "delYes": S.confirmDel=null; safe(()=>store.remove(id)); break;
+    case "sugAdd": { const p=S.sug; if(!p) break; S.sugAdded.add(p.ro); pickSug(p); renderList();
+      safe(async()=>{ await store.add({de:p.de,ctx:p.ctx,ro:p.ro,jp:p.jp,cat:p.cat,note:"",ex:false}); toast("Hinzugefügt"); }); break; }
+    case "aiGen": aiGen(); break;
+    case "vtGo": vtGo(); break;
+    case "dragNoop": break;
+    case "shopToggle": if (S.shopOpenSet.has(id)) S.shopOpenSet.delete(id); else S.shopOpenSet.add(id); saveOpen(); renderShop(); break;
+    case "shopAll": { const L = shopSorted(); const all = L.every(i => S.shopOpenSet.has(i.id));
+      S.shopOpenSet = new Set(all ? [] : L.map(i => i.id)); saveOpen(); renderShop(); break; }
+    case "shopAdd": shopOpen("new"); break;
+    case "shopViewList": S.shopView = "list"; ls.set("jp.shopView", "list"); renderShop(); break;
+    case "shopViewGallery": S.shopView = "gallery"; ls.set("jp.shopView", "gallery"); renderShop(); break;
+    case "shopGalleryOpen": S.shopView = "list"; ls.set("jp.shopView", "list"); S.shopOpenSet.add(id); saveOpen(); renderShop();
+      requestAnimationFrame(() => { const el = document.querySelector(`.srow[data-id="${CSS.escape(id)}"]`); if (el) el.scrollIntoView({block:"center", behavior:"smooth"}); }); break;
+    case "shopEdit": shopOpen(id); break;
+    case "shopCancel": shopOpen(null); break;
+    case "phRm": { const [x] = S.shopPhotos.splice(+b.dataset.k, 1); if (x && x.url) URL.revokeObjectURL(x.url); S.shopPhVer++; renderShop(); break; }
+    case "phMain": { const [x] = S.shopPhotos.splice(+b.dataset.k, 1); if (x) S.shopPhotos.unshift(x); S.shopPhVer++; renderShop(); break; }
+    case "shopPic": e.stopPropagation(); S.shopSel[id] = +b.dataset.k; renderShop(); break;
+    case "shopDel": S.shopDel=id; renderShop(); break;
+    case "shopDelNo": S.shopDel=null; renderShop(); break;
+    case "shopDelYes": { const it = shopById(id); S.shopDel=null;
+      safe(async()=>{ await shopStore.remove(id); if (it && S.assets) photosOf(it).forEach(pid => S.assets.delete(pid).catch(()=>{})); toast("Gelöscht"); }); break; }
+    case "shopBought": { const it = shopById(id); if (it) safe(()=>shopStore.update(id, {bought:!it.bought})); break; }
+    case "bucketToggle": { const it = bucketById(id); if (it) safe(()=>bucketStore.update(id, {done:!it.done})); break; }
+    case "bucketEdit": S.bucketEdit=id; S.bucketDel=null; renderBucket(); break;
+    case "bucketEditCancel": S.bucketEdit=null; renderBucket(); break;
+    case "bucketDel": S.bucketDel=id; S.bucketEdit=null; renderBucket(); break;
+    case "bucketDelNo": S.bucketDel=null; renderBucket(); break;
+    case "bucketDelYes": S.bucketDel=null; safe(()=>bucketStore.remove(id)); break;
+    case "aiAdd": { const p = S.aiSugs[+b.dataset.k]; if(!p) break; S.sugAdded.add(p.ro); S.aiSugs = S.aiSugs.filter(x=>x!==p); renderAI();
+      safe(async()=>{ await store.add({de:p.de,ctx:p.ctx,ro:p.ro,jp:p.jp,cat:p.cat,note:"",ex:false}); toast("Hinzugefügt"); }); break; }
+    case "aiDrop": { const p = S.aiSugs[+b.dataset.k]; if(!p) break; S.sugSkip.add(p.ro); ls.set("jp.skip",[...S.sugSkip]); S.aiSugs = S.aiSugs.filter(x=>x!==p); renderAI(); break; }
+    case "sugNext": pickSug(S.sug); renderSuggest(); break;
+    case "sugSkip": if(S.sug){ S.sugSkip.add(S.sug.ro); ls.set("jp.skip",[...S.sugSkip]); pickSug(); renderSuggest(); } break;
+  }
+});
+document.addEventListener("input", e => { if (e.target.closest && e.target.closest("#shopForm")) shopHints(); });
+document.addEventListener("change", e => {
+  if (e.target.id !== "sPhoto") return;
+  const fs = [...(e.target.files || [])].filter(f => /^image\//.test(f.type) || !f.type); if (!fs.length) return;
+  const room = MAX_PHOTOS - S.shopPhotos.length;
+  fs.slice(0, Math.max(0, room)).forEach(f => S.shopPhotos.push({file:f, url:URL.createObjectURL(f)}));
+  if (fs.length > room) toast(`Höchstens ${MAX_PHOTOS} Fotos pro Item.`);
+  S.shopPhVer++; renderShop();
+});
+document.addEventListener("submit", e => {
+  if (e.target.id === "shopForm"){ e.preventDefault(); shopSubmit(); return; }
+  if (e.target.id === "bucketAddForm"){
+    e.preventDefault();
+    const inp = $("bucketInput"), text = inp.value.trim();
+    if (!text) return;
+    inp.value = "";
+    safe(async () => { await bucketStore.add({text, done:false, created:Date.now()}); toast("Hinzugefügt"); });
+    return;
+  }
+  if (e.target.classList.contains("bedit")){
+    e.preventDefault();
+    const was = e.target.dataset.id, text = $("bEditInput").value.trim();
+    if (!text) return;
+    S.bucketEdit = null; renderBucket();
+    safe(async () => { await bucketStore.update(was, {text}); toast("Gespeichert"); });
+    return;
+  }
+  if (e.target.id !== "editForm") return;
+  e.preventDefault();
+  const o = { de:$("fDe").value.trim(), ctx:$("fCtx").value.trim(), ro:$("fRo").value.trim(), jp:$("fJp").value.trim(), cat:$("fCat").value.trim(), note:$("fNote").value.trim(), ex:false };
+  if (!o.de || !o.ro) return;
+  // Einheitliche Schreibweise: Romaji groß anfangen, Satzzeichen vom Deutschen übernehmen
+  o.ro = o.ro.charAt(0).toUpperCase() + o.ro.slice(1);
+  const end = o.de.slice(-1), JP = {".":"。","!":"！","?":"？"};
+  if (JP[end]) {
+    if (!/[.!?…]$/.test(o.ro)) o.ro += end;
+    if (o.jp && !/[。！？…]$/.test(o.jp)) o.jp += JP[end];
+  }
+  const was = S.editing; S.editing = null; renderList();
+  safe(async () => { if (was==="new") { await store.add(o); toast("Hinzugefügt"); } else { await store.update(was, o); toast("Gespeichert"); } });
+});
+document.addEventListener("keydown", e => {
+  if (S.view!=="cards" || e.target.closest("input,select,textarea")) return;
+  if (e.key===" " || e.key==="Enter"){ if (e.target.closest("button") && e.key==="Enter") return; e.preventDefault(); flip(); }
+  else if (e.key==="1") answer(false);
+  else if (e.key==="2") answer(true);
+});
+
+init();
+})();
+</script>
+
+</body></html>
