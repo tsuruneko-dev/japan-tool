@@ -845,7 +845,7 @@ function renderShop(){
   if (S.dragging){ S.shopPending = true; return; }
   const list = shopSorted();
   const imgOf = (i, id) => id
-    ? `<img src="${esc(photoSrc(id))}" ${S.supabase ? `data-photo-id="${esc(id)}"` : ""} alt="${esc(i.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'none',textContent:'写真なし'}))">`
+    ? `<img ${photoSrc(id) ? `src="${esc(photoSrc(id))}"` : ""} ${S.supabase ? `data-photo-id="${esc(id)}"` : ""} alt="${esc(i.name)}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'none',textContent:'写真なし'}))">`
     : `<span class="none">写真なし</span>`;
   const img = i => { const P = photosOf(i); return imgOf(i, P[0]) + (P.length > 1 ? `<span class="pcount">${P.length}</span>` : ""); };
   const gal = i => { const P = photosOf(i), k = Math.min(S.shopSel[i.id] || 0, Math.max(0, P.length - 1));
@@ -1009,7 +1009,7 @@ async function shopSubmit(){
   const P = S.shopPhotos, nNew = P.filter(x => x.file).length;
   S.shopBusy = true; $("sSave").disabled = true; $("sSave").textContent = nNew ? (nNew > 1 ? `${nNew} Fotos werden hochgeladen …` : "Foto wird hochgeladen …") : "Speichert …";
   try {
-    const ids = [];
+    const ids = [], uploadedBlobs=[];
     for (const x of P){
       if (x.id){ ids.push(x.id); continue; }
       if (!S.assets) continue;
@@ -1017,12 +1017,13 @@ async function shopSubmit(){
       try { blob = await shrinkImage(x.file); }
       catch(e){ throw {code:"decode"}; }
       const r = await S.assets.upload(blob, {type:"image/jpeg"});
-      ids.push(r.id); x.id = r.id;
+      ids.push(r.id); x.id = r.id; uploadedBlobs.push([r.id,blob]);
     }
     o.photos = ids; o.photo = ids[0] || null;
     const drop = was === "new" ? [] : photosOf(old).filter(id => !ids.includes(id));
     if (was === "new"){ o.bought = false; o.created = Date.now(); await shopStore.add(o); }
     else await shopStore.update(was, o);
+    for(const [id,blob] of uploadedBlobs) S.photoUrls.set(id,URL.createObjectURL(blob));
     if (S.assets) drop.forEach(id => S.assets.delete(id).catch(()=>{}));
     S.shopSel[was] = 0;
     S.shopBusy = false; shopOpen(null); toast(was==="new" ? "Item hinzugefügt" : "Gespeichert");
