@@ -419,7 +419,7 @@ const S = {
 
 /* ---------- Shopping-Liste ---------- */
 const DEFAULT_FX = {rate:177.15, date:"2026-10-09"};
-Object.assign(S, {shop:[], shopLoaded:false, fx:{...DEFAULT_FX}, research:{updated:0}, assets:null,
+Object.assign(S, {shop:[], shopLoaded:false, fx:{...DEFAULT_FX}, research:{updated:0}, researchBusy:new Set(), assets:null,
   shopEdit:null, shopDel:null, shopBusy:false, fxEdit:false, shopPhotos:[], shopPhVer:0, shopSel:{},
   shopOpenSet:new Set(ls.get("jp.shopOpen")||[]), dragging:false, shopPending:false,
   shopView: ls.get("jp.shopView")==="gallery" ? "gallery" : "list"});
@@ -753,18 +753,55 @@ function priceBlock(i){
 const CONF = {good:["gut belegt","ok"], thin:["wenig Daten","warn"], estimate:["geschätzt","warn"]};
 const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch(e){ return "Quelle"; } };
 function mktHtml(i){
-  const m = i.market; if (!m || !(m.shop || m.sold || m.note)) return "";
-  const c = CONF[m.confidence];
-  const links = (m.sources||[]).filter(u => /^https?:\/\//.test(u)).slice(0,3)
-    .map(u => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(hostOf(u))} ↗</a>`).join("");
+  const m=i.market, busy=S.researchBusy.has(i.id);
+  if(!m && !busy) return "";
+  const c=m && CONF[m.confidence];
+  const newSources=Array.isArray(m?.sources)?m.sources:[];
+  const links=newSources.slice(0,5).map(src=>{
+    const u=typeof src==="string"?src:src?.url;
+    if(!/^https?:\/\//.test(u||"")) return "";
+    const title=typeof src==="object"&&src.title?src.title:hostOf(u);
+    const price=typeof src==="object"&&isNum(src.price)?` · ${fmtY(src.price)}`:"";
+    return `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(title)}${price} ↗</a>`;
+  }).filter(Boolean).join("");
+  const hasPrices=m&&(isNum(m.low)||isNum(m.good)||isNum(m.high));
   return `<div class="mkt">
-    <div class="mhead"><span class="lbl">Preisrecherche${m.date?" · "+esc(fmtDate(m.date)):""}</span>${c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
-    ${m.shop?`<div class="mrow"><span class="mk">Im Laden</span><span>${esc(m.shop)}</span></div>`:""}
-    ${m.sold?`<div class="mrow"><span class="mk">Verkauft</span><span>${esc(m.sold)}</span></div>`:""}
-    ${!m.shop && !m.sold && m.note?`<div>${esc(m.note)}</div>`:""}
+    <div class="mhead"><span class="lbl">Japan-Preisrecherche${m?.date?" · "+esc(fmtDate(m.date)):""}</span>${c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
+    ${busy?`<div class="status">Suche aktuelle japanische Angebote …</div>`:""}
+    ${hasPrices?`
+      <div class="mrow"><span class="mk">Günstigstes gefundenes Angebot</span><b>${fmtY(m.low)}</b></div>
+      <div class="mrow"><span class="mk">Teures gefundenes Angebot</span><b>${fmtY(m.high)}</b></div>
+      <div class="mrow"><span class="mk">Guter Kaufpreis · Richtwert</span><b>${fmtY(m.good)}</b></div>
+      ${m.note?`<div class="mhint">${esc(m.note)}</div>`:""}
+    `:m?.shop||m?.sold||m?.note?`
+      ${m.shop?`<div class="mrow"><span class="mk">Im Laden</span><span>${esc(m.shop)}</span></div>`:""}
+      ${m.sold?`<div class="mrow"><span class="mk">Verkauft</span><span>${esc(m.sold)}</span></div>`:""}
+      ${!m.shop&&!m.sold&&m.note?`<div>${esc(m.note)}</div>`:""}
+    `:""}
     ${links?`<div class="mlinks">${links}</div>`:""}
-    ${i.fixed ? "" : `<div class="mhint">Daraus abgeleitet: Minimum ≈ günstigste realistische Verkäufe, Wunschpreis ≈ Median, also was man für ein gutes Exemplar typischerweise zahlt, Maximum ≈ normaler oberer Ladenpreis.</div>`}
   </div>`;
+}
+
+async function researchShopItem(id){
+  if(S.researchBusy.has(id)) return;
+  const item=shopById(id);
+  if(!item) return;
+  if(!S.supabase||!S.authUser){ toast("Bitte melde dich an, um Preise zu recherchieren."); return; }
+  S.researchBusy.add(id); renderShop();
+  try{
+    const {data,error}=await S.supabase.functions.invoke("japan-price-research",{
+      body:{name:item.name,desc:item.desc||"",dims:item.dims||""}
+    });
+    if(error) throw error;
+    if(data?.error) throw new Error(data.error);
+    if(!data?.market) throw new Error("Die Recherche lieferte keine Preisdaten.");
+    await shopStore.update(id,{market:data.market});
+    toast("Japanische Preisquellen und Richtwert gespeichert.");
+  }catch(e){
+    toast(e?.message||"Die Preisrecherche hat nicht geklappt. Versuch es nochmal.");
+  }finally{
+    S.researchBusy.delete(id); renderShop();
+  }
 }
 
 function shopFormHtml(e){
@@ -884,7 +921,7 @@ function renderShop(){
           <div class="sact">
             ${S.shopDel===i.id
               ? `<span class="stat">Wirklich löschen?</span><button class="mini danger" data-act="shopDelYes" data-id="${i.id}">Ja</button><button class="mini" data-act="shopDelNo">Nein</button>`
-              : `<button class="mini" data-act="shopBought" data-id="${i.id}">${i.bought?"Doch nicht gekauft":"✓ Gekauft"}</button><button class="mini" data-act="shopEdit" data-id="${i.id}">Bearbeiten</button><button class="mini danger" data-act="shopDel" data-id="${i.id}">Löschen</button>`}
+              : `<button class="mini" data-act="marketResearch" data-id="${i.id}" ${S.researchBusy.has(i.id)?"disabled":""}>${S.researchBusy.has(i.id)?"Sucht Preise …":i.market?"Preise neu suchen":"Japan-Preise suchen"}</button><button class="mini" data-act="shopBought" data-id="${i.id}">${i.bought?"Doch nicht gekauft":"✓ Gekauft"}</button><button class="mini" data-act="shopEdit" data-id="${i.id}">Bearbeiten</button><button class="mini danger" data-act="shopDel" data-id="${i.id}">Löschen</button>`}
           </div>
         </div>
       </div>` : ""}
@@ -1406,6 +1443,7 @@ document.addEventListener("click", e => {
     case "shopDelNo": S.shopDel=null; renderShop(); break;
     case "shopDelYes": { const it = shopById(id); S.shopDel=null;
       safe(async()=>{ await shopStore.remove(id); if (it && S.assets) photosOf(it).forEach(pid => S.assets.delete(pid).catch(()=>{})); toast("Gelöscht"); }); break; }
+    case "marketResearch": researchShopItem(id); break;
     case "shopBought": { const it = shopById(id); if (it) safe(()=>shopStore.update(id, {bought:!it.bought})); break; }
     case "bucketToggle": { const it = bucketById(id); if (it) safe(()=>bucketStore.update(id, {done:!it.done})); break; }
     case "bucketEdit": S.bucketEdit=id; S.bucketDel=null; renderBucket(); break;
