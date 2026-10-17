@@ -718,8 +718,8 @@ async function refreshFx(){
     if(!response.ok) return;
     const quote=await response.json(), rate=Number(quote.rate);
     if(!quote.date || !Number.isFinite(rate) || rate<=0 || S.authUser?.id!==userId) return;
-    if(S.fx?.date===quote.date && S.fx?.rate===rate) return;
-    await shopStore.fx({rate,date:quote.date});
+    if(S.fx?.date===quote.date && S.fx?.rate===rate && S.fx?.updated) return;
+    await shopStore.fx({rate,date:quote.date,updated:Date.now()});
   }catch(_){ /* Der zuletzt gespeicherte Kurs bleibt bei Netzwerkausfall erhalten. */ }
   finally{ clearTimeout(timeout); }
 }
