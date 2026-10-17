@@ -766,7 +766,7 @@ function mktHtml(i){
   const m=i.market, busy=S.researchBusy.has(i.id);
   if(!m && !busy) return "";
   const c=m && CONF[m.confidence];
-  const newSources=[...(Array.isArray(m?.sources)?m.sources:[]),...(m?.referencePrice?.url?[m.referencePrice]:[])];
+  const newSources=[...(Array.isArray(m?.sources)?m.sources:[]),...(Array.isArray(m?.shopSources)?m.shopSources:[]),...(Array.isArray(m?.soldSources)?m.soldSources:[]),...(Array.isArray(m?.referenceSources)?m.referenceSources:[]),...(m?.referencePrice?.url?[m.referencePrice]:[])];
   const links=newSources.slice(0,5).map(src=>{
     const u=typeof src==="string"?src:src?.url;
     if(!/^https?:\/\//.test(u||"")) return "";
@@ -776,12 +776,14 @@ function mktHtml(i){
   }).filter(Boolean).join("");
   const hasPrices=m&&(isNum(m.low)||isNum(m.good)||isNum(m.high));
   return `<div class="mkt">
-    <div class="mhead"><span class="lbl">Japan-Preisrecherche${m?.date?" · "+esc(fmtDate(m.date)):""}</span>${m&&m.qualityVersion!==3?`<span class="conf warn">Alte Recherche · bitte neu suchen</span>`:c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
+    <div class="mhead"><span class="lbl">Japan-Preisrecherche${m?.date?" · "+esc(fmtDate(m.date)):""}</span>${m&&m.qualityVersion!==4?`<span class="conf warn">Alte Recherche · bitte neu suchen</span>`:c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
     ${busy?`<div class="status">Suche aktuelle japanische Angebote …</div>`:""}
     ${m?.referencePrice?.price?`<div class="mrow"><span class="mk">UVP / Referenzpreis laut Quelle</span><b>${fmtY(m.referencePrice.price)}</b></div>`:""}
+    ${m?.shop?`<div class="mrow"><span class="mk">Aktuell angeboten</span><span>${esc(m.shop)}</span></div>`:""}
+    ${m?.sold?`<div class="mrow"><span class="mk">Abgeschlossene Verkäufe</span><span>${esc(m.sold)}</span></div>`:""}
     ${hasPrices?`
-      <div class="mrow"><span class="mk">Günstigstes gefundenes Angebot</span><b>${fmtY(m.low)}</b></div>
-      <div class="mrow"><span class="mk">Teures gefundenes Angebot</span><b>${fmtY(m.high)}</b></div>
+      <div class="mrow"><span class="mk">${m.priceBasis==="sold"?"Niedrigster passender Verkauf":"Günstigstes aktuelles Angebot"}</span><b>${fmtY(m.low)}</b></div>
+      <div class="mrow"><span class="mk">${m.priceBasis==="sold"?"Höchster passender Verkauf":"Teures aktuelles Angebot"}</span><b>${fmtY(m.high)}</b></div>
       <div class="mrow"><span class="mk">Guter Kaufpreis · Richtwert</span><b>${fmtY(m.good)}</b></div>
       ${m.note?`<div class="mhint">${esc(m.note)}</div>`:""}
     `:m?.shop||m?.sold||m?.note?`
