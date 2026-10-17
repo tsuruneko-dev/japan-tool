@@ -766,7 +766,7 @@ function mktHtml(i){
   const m=i.market, busy=S.researchBusy.has(i.id);
   if(!m && !busy) return "";
   const c=m && CONF[m.confidence];
-  const newSources=Array.isArray(m?.sources)?m.sources:[];
+  const newSources=[...(Array.isArray(m?.sources)?m.sources:[]),...(m?.referencePrice?.url?[m.referencePrice]:[])];
   const links=newSources.slice(0,5).map(src=>{
     const u=typeof src==="string"?src:src?.url;
     if(!/^https?:\/\//.test(u||"")) return "";
@@ -778,6 +778,7 @@ function mktHtml(i){
   return `<div class="mkt">
     <div class="mhead"><span class="lbl">Japan-Preisrecherche${m?.date?" · "+esc(fmtDate(m.date)):""}</span>${c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
     ${busy?`<div class="status">Suche aktuelle japanische Angebote …</div>`:""}
+    ${m?.referencePrice?.price?`<div class="mrow"><span class="mk">UVP / Referenzpreis laut Quelle</span><b>${fmtY(m.referencePrice.price)}</b></div>`:""}
     ${hasPrices?`
       <div class="mrow"><span class="mk">Günstigstes gefundenes Angebot</span><b>${fmtY(m.low)}</b></div>
       <div class="mrow"><span class="mk">Teures gefundenes Angebot</span><b>${fmtY(m.high)}</b></div>
@@ -805,8 +806,12 @@ async function researchShopItem(id){
     if(error) throw error;
     if(data?.error) throw new Error(data.error);
     if(!data?.market) throw new Error("Die Recherche lieferte keine Preisdaten.");
-    await shopStore.update(id,{min:data.market.low,max:data.market.high,price:data.market.good,market:data.market});
-    toast("Minimum, Maximum und guter Kaufpreis wurden gespeichert.");
+    const patch={market:data.market};
+    if(isNum(data.market.low)) patch.min=data.market.low;
+    if(isNum(data.market.high)) patch.max=data.market.high;
+    if(isNum(data.market.good)) patch.price=data.market.good;
+    await shopStore.update(id,patch);
+    toast(isNum(data.market.good)?"Preise und Quelle wurden gespeichert.":"Referenzpreis und Quelle wurden gespeichert; passende aktuelle Angebote gab es nicht.");
   }catch(e){
     toast(e?.message||"Die Preisrecherche hat nicht geklappt. Versuch es nochmal.");
   }finally{
