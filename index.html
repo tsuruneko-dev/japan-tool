@@ -420,7 +420,7 @@ const S = {
 /* ---------- Shopping-Liste ---------- */
 const DEFAULT_FX = {rate:177.15, date:"2026-10-09"};
 Object.assign(S, {shop:[], shopLoaded:false, fx:{...DEFAULT_FX}, research:{updated:0}, researchBusy:new Set(), assets:null,
-  shopEdit:null, shopDel:null, shopBusy:false, fxEdit:false, shopPhotos:[], shopPhVer:0, shopSel:{},
+  shopEdit:null, shopDel:null, shopBusy:false, shopFormResearchBusy:false, shopMarketDraft:null, fxEdit:false, shopPhotos:[], shopPhVer:0, shopSel:{},
   shopOpenSet:new Set(ls.get("jp.shopOpen")||[]), dragging:false, shopPending:false,
   shopView: ls.get("jp.shopView")==="gallery" ? "gallery" : "list"});
 const saveOpen = () => ls.set("jp.shopOpen", [...S.shopOpenSet]);
@@ -827,6 +827,7 @@ function shopFormHtml(e){
       <div class="field"><label class="lbl" for="sPrice" id="lPrice">${e.fixed?"Festpreis ¥":"Wunschpreis ¥"}</label><input type="text" inputmode="numeric" id="sPrice" value="${isNum(e.price)?e.price:""}" placeholder="z. B. 10000"><span class="fxh" id="hPrice"></span></div>
       <div class="field" id="wMax" ${e.fixed?"hidden":""}><label class="lbl" for="sMax">Maximum ¥</label><input type="text" inputmode="numeric" id="sMax" value="${isNum(e.max)?e.max:""}" placeholder="z. B. 14000"><span class="fxh" id="hMax"></span></div>
     </div>
+    <div class="field full" id="shopFormResearchRow"><button type="button" class="btn" data-act="shopFormResearch" id="shopFormResearch" ${S.shopFormResearchBusy?"disabled":""}>${S.shopFormResearchBusy?"Sucht Japan-Preise …":"Japan-Preise suchen und Felder übernehmen"}</button><span class="status">Übernimmt Minimum, guten Kaufpreis und Maximum direkt in die Felder oben.</span></div>
     <div class="full warn" id="sWarn"></div>
     <div class="btns"><button type="button" class="btn" data-act="shopCancel">Abbrechen</button><button type="submit" class="btn primary" id="sSave">${S.shopEdit==="new"?"Hinzufügen":"Speichern"}</button></div>
   </form>`;
@@ -836,6 +837,7 @@ function shopHints(){
   [["hMin","min"],["hPrice","price"],["hMax","max"]].forEach(([h,k]) => { const el=$(h); if (el) el.textContent = isNum(v[k]) ? "≈ " + fmtE(v[k]) : ""; });
   const fx = !!$("sFixed")?.checked;
   if ($("sP3")){ $("sP3").classList.toggle("fixed", fx); $("wMin").hidden = fx; $("wMax").hidden = fx; $("lPrice").textContent = fx ? "Festpreis ¥" : "Wunschpreis ¥"; }
+  if ($("shopFormResearchRow")) $("shopFormResearchRow").hidden = fx;
   const w = $("sWarn"); if (!w) return;
   const bad = !fx && (isNum(v.min)&&isNum(v.price)&&v.min>v.price) || (isNum(v.price)&&isNum(v.max)&&v.price>v.max) || (isNum(v.min)&&isNum(v.max)&&v.min>v.max);
   w.textContent = bad ? "Hinweis: Normalerweise gilt Minimum ≤ Wunschpreis ≤ Maximum." : "";
@@ -1022,7 +1024,7 @@ document.addEventListener("keydown", e => {
 function shopOpen(id){
   S.shopPhotos.forEach(x => x.url && URL.revokeObjectURL(x.url));
   const it = id && id !== "new" ? shopById(id) : null;
-  Object.assign(S, {shopEdit:id, shopPhotos: it ? photosOf(it).map(pid => ({id:pid})) : [], shopDel:null});
+  Object.assign(S, {shopEdit:id, shopMarketDraft:null, shopFormResearchBusy:false, shopPhotos: it ? photosOf(it).map(pid => ({id:pid})) : [], shopDel:null});
   S.shopPhVer++;
   $("shopFormSlot").dataset.for = "";
   renderShop();
@@ -1032,6 +1034,26 @@ const assetErr = c => c==="too_large" ? "Das Foto ist zu groß." : c==="unsuppor
   : c==="quota_or_state" ? "Der Speicher für Fotos ist voll. Lösche alte Items mit Foto." : c==="rate_limited" ? "Zu viele Uploads auf einmal. Warte kurz."
   : c==="upstream_auth" ? "Bitte lade die Seite neu oder melde dich neu an." : "Das Foto konnte nicht hochgeladen werden. Probier es nochmal.";
 
+async function researchShopForm(){
+  if (S.shopFormResearchBusy) return;
+  const name=$("sName")?.value.trim();
+  if(!name){ toast("Trag zuerst den Artikelnamen ein."); $("sName")?.focus(); return; }
+  if($("sFixed")?.checked){ toast("Bitte deaktiviere zuerst Festpreis, damit der Kaufpreis übernommen werden kann."); return; }
+  if(!S.supabase||!S.authUser){ toast("Bitte melde dich an, um Preise zu recherchieren."); return; }
+  S.shopFormResearchBusy=true;
+  const button=$("shopFormResearch"); if(button){button.disabled=true;button.textContent="Sucht Japan-Preise …";}
+  try{
+    const {data,error}=await S.supabase.functions.invoke("japan-price-research",{body:{name,desc:$("sDesc")?.value.trim()||"",dims:$("sDims")?.value.trim()||""}});
+    if(error) throw error;
+    if(data?.error) throw new Error(data.error);
+    const m=data?.market;
+    if(!m||!isNum(m.low)||!isNum(m.high)||!isNum(m.good)) throw new Error("Die Recherche lieferte keine vollständigen Preisdaten.");
+    $("sMin").value=String(m.low); $("sPrice").value=String(m.good); $("sMax").value=String(m.high);
+    S.shopMarketDraft=m; shopHints(); toast("Preise stehen in den Feldern. Drück jetzt auf Speichern.");
+  }catch(e){ toast(e?.message||"Die Preisrecherche hat nicht geklappt. Versuch es nochmal."); }
+  finally{ S.shopFormResearchBusy=false; const b=$("shopFormResearch"); if(b){b.disabled=false;b.textContent="Japan-Preise suchen und Felder übernehmen";} }
+}
+
 async function shopSubmit(){
   if (S.shopBusy) return;
   const name = $("sName").value.trim(); if (!name) return;
@@ -1040,6 +1062,7 @@ async function shopSubmit(){
   const dims = $("sDims").value.trim();
   const o = fixed ? { name, desc:$("sDesc").value.trim(), dims, price:parseY($("sPrice").value), fixed:true }
     : { name, desc:$("sDesc").value.trim(), dims, price:parseY($("sPrice").value), min:parseY($("sMin").value), max:parseY($("sMax").value), fixed:false };
+  if (S.shopMarketDraft) o.market=S.shopMarketDraft;
   const P = S.shopPhotos, nNew = P.filter(x => x.file).length;
   S.shopBusy = true; $("sSave").disabled = true; $("sSave").textContent = nNew ? (nNew > 1 ? `${nNew} Fotos werden hochgeladen …` : "Foto wird hochgeladen …") : "Speichert …";
   try {
@@ -1430,6 +1453,7 @@ document.addEventListener("click", e => {
     case "shopAll": { const L = shopSorted(); const all = L.every(i => S.shopOpenSet.has(i.id));
       S.shopOpenSet = new Set(all ? [] : L.map(i => i.id)); saveOpen(); renderShop(); break; }
     case "shopAdd": shopOpen("new"); break;
+    case "shopFormResearch": researchShopForm(); break;
     case "shopViewList": S.shopView = "list"; ls.set("jp.shopView", "list"); renderShop(); break;
     case "shopViewGallery": S.shopView = "gallery"; ls.set("jp.shopView", "gallery"); renderShop(); break;
     case "shopGalleryOpen": S.shopView = "list"; ls.set("jp.shopView", "list"); S.shopOpenSet.add(id); saveOpen(); renderShop();
