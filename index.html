@@ -656,8 +656,8 @@ function initSupabaseApp(){
     const next=session?.user||null, changed=next?.id!==S.authUser?.id;
     S.authReady=true; S.authUser=next;
     if(next){
-      setSupabaseAssets();
       if(changed){ clearCloudUser(); S.appLoading=true; setTimeout(()=>loadCloudApp(),0); }
+      setSupabaseAssets();
     } else if(changed || S.loaded || S.shopLoaded || S.bucketLoaded) clearCloudUser();
     renderGlobalAuth();
   });
