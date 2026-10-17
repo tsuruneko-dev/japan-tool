@@ -795,8 +795,8 @@ async function researchShopItem(id){
     if(error) throw error;
     if(data?.error) throw new Error(data.error);
     if(!data?.market) throw new Error("Die Recherche lieferte keine Preisdaten.");
-    await shopStore.update(id,{market:data.market});
-    toast("Japanische Preisquellen und Richtwert gespeichert.");
+    await shopStore.update(id,{min:data.market.low,max:data.market.high,price:data.market.good,market:data.market});
+    toast("Minimum, Maximum und guter Kaufpreis wurden gespeichert.");
   }catch(e){
     toast(e?.message||"Die Preisrecherche hat nicht geklappt. Versuch es nochmal.");
   }finally{
