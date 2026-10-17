@@ -87,6 +87,11 @@ input[type=range]{accent-color:var(--accent);width:100%;margin:6px 0 0}
 
 /* ---------- Liste ---------- */
 .listtop{display:grid;grid-template-columns:1fr auto;gap:8px}
+.listtools{display:flex;gap:8px;align-items:center}
+.importpreview{background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.importpreview[hidden]{display:none}
+.importpreview .btns{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+@media(max-width:560px){.listtop{grid-template-columns:1fr}.listtools{display:grid;grid-template-columns:1fr 1fr}.listtools .btn{padding-inline:8px}}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 form.edit{background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
 form.edit .full{grid-column:1/-1}
@@ -313,8 +318,13 @@ input[type=file]{font-size:.85rem;max-width:100%}
       <div id="vtBar"></div>
       <div class="listtop">
         <input type="search" id="q" placeholder="Suchen (Deutsch, Romaji oder Japanisch)" aria-label="Suchen">
-        <button class="btn primary" id="addBtn">+ Phrase hinzufügen</button>
+        <div class="listtools">
+          <button class="btn" id="jsonImportBtn" type="button">JSON importieren</button>
+          <button class="btn primary" id="addBtn" type="button">+ Phrase hinzufügen</button>
+        </div>
       </div>
+      <input type="file" id="jsonImportFile" accept=".json,application/json" hidden>
+      <div class="importpreview" id="importPreview" hidden aria-live="polite"></div>
       <div class="chips" id="listChips"></div>
       <div id="formSlot"></div>
       <div id="listArea" style="display:flex;flex-direction:column;gap:18px"></div>
@@ -1167,6 +1177,14 @@ const store = {
     const {data,error}=await S.supabase.from("learning_items").insert({item:o}).select("id").single();
     if(error) throw error; o.id=data.id; S.items.push(o); onData();
   },
+  async addMany(rows){
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um Karteikarten zu speichern.");
+    if (!rows.length) return [];
+    const {data,error}=await S.supabase.from("learning_items").insert(rows.map(item=>({item}))).select("id,item");
+    if(error) throw error;
+    const added=(data||[]).map(row=>({...row.item,id:row.id}));
+    S.items.push(...added); onData(); return added;
+  },
   async update(id, patch){
     if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um Karteikarten zu speichern.");
     const next={...(S.items.find(i=>i.id===id)||{}),...patch}; delete next.id;
@@ -1352,6 +1370,80 @@ function renderList(){
         </div>`).join("")}</div></div>`).join("");
 }
 
+/* ---------- Phrasen aus JSON importieren ---------- */
+let phraseImportDraft = null;
+let phraseImportBusy = false;
+const phraseKey = value => String(value||"").normalize("NFKC").toLowerCase().replace(/[\s。！？!?.,、]/g,"");
+function normalizeImportedPhrase(row){
+  if(!row || typeof row!=="object" || Array.isArray(row)) return null;
+  const de=String(row.de ?? row.german ?? row.translation ?? "").trim();
+  const ro=String(row.ro ?? row.romaji ?? "").trim();
+  const jp=String(row.jp ?? row.japanese ?? "").trim();
+  if(!de || !ro || de.length>500 || ro.length>500 || jp.length>500) return null;
+  const cat=String(row.cat ?? row.category ?? "").trim().slice(0,80);
+  const ctx=String(row.ctx ?? row.context ?? "").trim().slice(0,1000);
+  const note=String(row.note ?? "").trim().slice(0,1000);
+  const item={de,ro,jp,cat,ctx,note,ex:row.ex===true,created:Date.now(),
+    ok:Number.isFinite(+row.ok)?Math.max(0,Math.min(100000,Math.floor(+row.ok))):0,
+    miss:Number.isFinite(+row.miss)?Math.max(0,Math.min(100000,Math.floor(+row.miss))):0};
+  if(typeof row.audio==="string" && /^audio2\/[A-Za-z0-9_.-]+\.mp3$/.test(row.audio)) {
+    item.audio=row.audio;
+    if(typeof row.audioFor==="string" && row.audioFor.length<=500) item.audioFor=row.audioFor;
+  }
+  return item;
+}
+function renderPhraseImportPreview(){
+  const box=$("importPreview");
+  if(!box) return;
+  if(!phraseImportDraft){box.hidden=true;box.innerHTML="";return;}
+  const d=phraseImportDraft, n=d.rows.length;
+  box.hidden=false;
+  box.innerHTML=`<strong>JSON-Datei geprüft</strong>
+    <span>${d.total} Einträge: <b>${n} neue Phrasen</b>, ${d.duplicates} bereits vorhanden (werden übersprungen), ${d.invalid} ungültig.
+    Deine vorhandene Liste bleibt erhalten.</span>
+    <div class="btns">
+      <button class="btn" type="button" data-act="importCancel" ${phraseImportBusy?"disabled":""}>Abbrechen</button>
+      <button class="btn primary" type="button" data-act="importConfirm" ${phraseImportBusy||!n?"disabled":""}>${phraseImportBusy?"Import läuft …":`Neue Phrasen importieren (${n})`}</button>
+    </div>`;
+}
+async function inspectPhraseImport(file){
+  phraseImportDraft=null; renderPhraseImportPreview();
+  if(!file) return;
+  if(file.size>5*1024*1024){toast("Die JSON-Datei ist größer als 5 MB.");return;}
+  try{
+    const parsed=JSON.parse(await file.text());
+    const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.phrases)?parsed.phrases:Array.isArray(parsed.items)?parsed.items:Array.isArray(parsed.cards)?parsed.cards:null;
+    if(!rows) throw new Error("Die Datei muss eine JSON-Liste mit Phrasen enthalten.");
+    if(rows.length>500) throw new Error("Es können höchstens 500 Phrasen auf einmal importiert werden.");
+    const knownJP=new Set(),knownFallback=new Set();
+    for(const item of S.items){
+      const jp=phraseKey(item.jp), fallback=phraseKey(item.de)+"|"+phraseKey(item.ro);
+      if(jp) knownJP.add(jp); if(item.de&&item.ro) knownFallback.add(fallback);
+    }
+    const accepted=[];let duplicates=0,invalid=0;
+    for(const raw of rows){
+      const item=normalizeImportedPhrase(raw);
+      if(!item){invalid++;continue;}
+      const jp=phraseKey(item.jp), fallback=phraseKey(item.de)+"|"+phraseKey(item.ro);
+      if((jp&&knownJP.has(jp))||knownFallback.has(fallback)){duplicates++;continue;}
+      if(jp) knownJP.add(jp);knownFallback.add(fallback);accepted.push(item);
+    }
+    phraseImportDraft={rows:accepted,total:rows.length,duplicates,invalid};
+    renderPhraseImportPreview();
+  }catch(error){toast(error?.message||"Die Datei ist kein gültiges JSON.");}
+}
+async function importPhraseDraft(){
+  if(phraseImportBusy||!phraseImportDraft?.rows.length)return;
+  if(!S.authUser||!S.supabase){toast("Bitte melde dich an, bevor du Phrasen importierst.");return;}
+  phraseImportBusy=true;renderPhraseImportPreview();
+  try{
+    const count=(await store.addMany(phraseImportDraft.rows)).length;
+    phraseImportDraft=null; $("jsonImportFile").value=""; renderPhraseImportPreview();
+    toast(`${count} neue Phrase${count===1?"":"n"} importiert.`);
+  }catch(error){toast(error?.message||"Der Import hat nicht geklappt. Deine Liste wurde nicht ersetzt.");}
+  finally{phraseImportBusy=false;renderPhraseImportPreview();}
+}
+
 /* ---------- Aktionen ---------- */
 function setView(v){ S.view=v; ls.set("jp.view",v); renderAll(); }
 function flip(){ if (S.idx < S.deck.length){ S.flipped = !S.flipped; renderCards(); } }
@@ -1421,6 +1513,8 @@ $("limitR").onchange = e => {
 };
 $("q").oninput = e => { S.q = e.target.value; renderList(); };
 $("addBtn").onclick = () => { S.editing="new"; renderList(); };
+$("jsonImportBtn").onclick = () => $("jsonImportFile").click();
+$("jsonImportFile").onchange = e => { void inspectPhraseImport(e.target.files?.[0]); e.target.value=""; };
 
 document.addEventListener("click", e => {
   if (e.target.closest("#globalSignOut")){ safe(async()=>{ const {error}=await S.supabase.auth.signOut(); if(error) throw error; }); return; }
@@ -1432,6 +1526,8 @@ document.addEventListener("click", e => {
   if (!b){ if (e.target.closest("#card")) flip(); return; }
   const id = b.dataset.id;
   switch(b.dataset.act){
+    case "importCancel": phraseImportDraft=null; renderPhraseImportPreview(); break;
+    case "importConfirm": void importPhraseDraft(); break;
     case "flip": flip(); break;
     case "ok": answer(true); break;
     case "miss": answer(false); break;
