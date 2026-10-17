@@ -148,6 +148,11 @@ form.edit .btns{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}
 .authbuttons{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .authbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 12px;background:var(--surface);border:1px solid var(--line);border-radius:10px;font-size:.8rem;color:var(--muted)}
 .authbar b{color:var(--ink);font-weight:600}
+.authgate{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}
+.authcard{width:min(100%,480px);background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 22px;box-shadow:0 12px 30px -18px rgba(20,33,58,.35);display:flex;flex-direction:column;gap:12px;text-align:center;align-items:center}
+.authcard strong{color:var(--ink);font-size:1.05rem}
+.authcard p{margin:0;color:var(--muted);line-height:1.5}
+.accountbar{margin-bottom:12px}
 
 /* ---------- Shopping ---------- */
 .fxbar{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:.85rem;color:var(--muted)}
@@ -277,7 +282,9 @@ input[type=file]{font-size:.85rem;max-width:100%}
 @media (prefers-reduced-motion:reduce){.card{transition:none}.bar i{transition:none}}
 </style>
 
-<div class="wrap">
+<section id="authGate" class="authgate" aria-live="polite"></section>
+<div class="wrap" id="appShell" hidden>
+  <div id="accountBar" class="authbar accountbar"></div>
   <header>
     <div class="brand"><span class="jp">旅の言葉</span><span class="de">Meine Japan-Reisephrasen</span></div>
     <div class="seg" role="group" aria-label="Ansicht">
@@ -320,8 +327,6 @@ input[type=file]{font-size:.85rem;max-width:100%}
 
   <section id="viewShop" hidden>
     <div style="display:flex;flex-direction:column;gap:14px">
-      <div id="shopAuth"></div>
-      <div id="shopContent">
       <div class="listtop">
         <div class="fxbar" id="fxBar"></div>
         <button class="btn primary" data-act="shopAdd">+ Item hinzufügen</button>
@@ -329,7 +334,6 @@ input[type=file]{font-size:.85rem;max-width:100%}
       <div id="shopSum"></div>
       <div id="shopFormSlot"></div>
       <div id="shopArea"></div>
-      </div>
     </div>
   </section>
 
@@ -413,7 +417,7 @@ const S = {
   q:"", listCat:"Alle", editing:null, confirmDel:null,
   sug:null, sugSkip:new Set(ls.get("jp.skip")||[]), sugAdded:new Set(),
   sample:null, aiBusy:false, aiErr:"", aiSugs:[],
-  supabase:null, authUser:null, photoUrls:new Map(), photoLoads:new Set(),
+  supabase:null, authUser:null, authReady:false, appLoading:false, appLoadError:"", photoUrls:new Map(), photoLoads:new Set(),
 };
 
 /* ---------- Shopping-Liste ---------- */
@@ -429,9 +433,22 @@ Object.assign(S, {bucket:[], bucketLoaded:false, bucketDel:null, bucketEdit:null
 const bucketById = id => S.bucket.find(i => i.id === id);
 const bucketSorted = () => [...S.bucket].sort((a,b) => (!!a.done - !!b.done) || (sortKey(a) - sortKey(b)));
 const bucketStore = {
-  async add(o){ if (S.db) await S.db.collection("bucket").add(o); else { o.id = "b"+Math.random().toString(36).slice(2,10); S.bucket.push(o); ls.set("jp.bucket", S.bucket); renderAll(); } },
-  async update(id, p){ if (S.db) await S.db.doc("bucket/"+id).update(p); else { Object.assign(bucketById(id)||{}, p); ls.set("jp.bucket", S.bucket); renderAll(); } },
-  async remove(id){ if (S.db) await S.db.doc("bucket/"+id).delete(); else { S.bucket = S.bucket.filter(i=>i.id!==id); ls.set("jp.bucket", S.bucket); renderAll(); } },
+  async add(o){
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um die Bucket-Liste zu speichern.");
+    const {data,error}=await S.supabase.from("bucket_items").insert({item:o}).select("id").single();
+    if(error) throw error; o.id=data.id; S.bucket.push(o); renderAll();
+  },
+  async update(id,p){
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um die Bucket-Liste zu speichern.");
+    const next={...(bucketById(id)||{}),...p}; delete next.id;
+    const {error}=await S.supabase.from("bucket_items").update({item:next}).eq("id",id);
+    if(error) throw error; Object.assign(bucketById(id)||{},p); renderAll();
+  },
+  async remove(id){
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um die Bucket-Liste zu speichern.");
+    const {error}=await S.supabase.from("bucket_items").delete().eq("id",id);
+    if(error) throw error; S.bucket=S.bucket.filter(i=>i.id!==id); renderAll();
+  },
 };
 function renderBucket(){
   if (!$("viewBucket")) return;
@@ -490,19 +507,41 @@ const photosOf = i => Array.isArray(i.photos) && i.photos.length ? i.photos.filt
 const photoSrc = id => S.photoUrls.get(id) || (/^data:image\//.test(id||"") ? id : "");
 const MAX_PHOTOS = 8;
 
-function renderShopAuth(){
-  const host = $("shopAuth"); if (!host) return;
-  if (!S.supabase){ host.innerHTML=""; return; }
-  if (S.authUser){
-    host.innerHTML = `<div class="authbar"><span>Angemeldet als <b>${esc(S.authUser.email||"")}</b> · Liste und Fotos privat synchronisiert</span><button type="button" class="mini" id="shopSignOut">Abmelden</button></div>`;
+function renderGlobalAuth(){
+  const gate=$("authGate"), shell=$("appShell"), account=$("accountBar");
+  if(!gate||!shell) return;
+  if(!S.supabase){
+    shell.hidden=true; gate.hidden=false; account.innerHTML="";
+    gate.innerHTML=`<div class="authcard"><strong>Cloud-Speicher nicht erreichbar</strong><p>Die Anmeldung ist gerade nicht verfügbar. Bitte lade die Seite neu.</p></div>`;
     return;
   }
-  host.innerHTML = `<div class="empty"><strong>Privater Cloud-Speicher</strong><span>Melde dich an, damit Shoppingliste und Fotos sicher auf deinen Geräten synchronisiert werden.</span>
-    <form id="shopAuthForm" class="authform">
-      <input type="email" id="shopAuthEmail" required autocomplete="username" placeholder="E-Mail-Adresse" aria-label="E-Mail-Adresse">
-      <input type="password" id="shopAuthPassword" required minlength="8" autocomplete="current-password" placeholder="Passwort (mind. 8 Zeichen)" aria-label="Passwort">
+  if(!S.authReady){
+    shell.hidden=true; gate.hidden=false; account.innerHTML="";
+    gate.innerHTML=`<div class="authcard"><strong>Japan-Tool wird geladen …</strong><p>Verbindung zum privaten Speicher wird hergestellt.</p></div>`;
+    return;
+  }
+  if(S.authUser && S.appLoading){
+    shell.hidden=true; gate.hidden=false; account.innerHTML="";
+    gate.innerHTML=`<div class="authcard"><strong>Deine Daten werden geladen …</strong><p>Shopping, Bucket-Liste und Karteikarten werden synchronisiert.</p></div>`;
+    return;
+  }
+  if(S.authUser && S.appLoadError){
+    shell.hidden=true; gate.hidden=false; account.innerHTML="";
+    gate.innerHTML=`<div class="authcard"><strong>Deine Daten konnten nicht geladen werden</strong><p>${esc(S.appLoadError)}</p><button class="btn primary" type="button" id="retryCloudLoad">Erneut versuchen</button></div>`;
+    return;
+  }
+  if(S.authUser){
+    gate.hidden=true; shell.hidden=false;
+    account.innerHTML=`<span>Angemeldet als <b>${esc(S.authUser.email||"")}</b> · Alle Listen privat synchronisiert</span><button type="button" class="mini" id="globalSignOut">Abmelden</button>`;
+    return;
+  }
+  shell.hidden=true; gate.hidden=false; account.innerHTML="";
+  gate.innerHTML=`<div class="authcard"><strong>Privates Japan-Tool</strong><p>Melde dich an, damit dein gesamtes Tool auf all deinen Geräten verfügbar ist. Shopping, Bucket-Liste und Karteikarten werden privat gespeichert.</p>
+    <form id="globalAuthForm" class="authform">
+      <input type="email" id="globalAuthEmail" required autocomplete="username" placeholder="E-Mail-Adresse" aria-label="E-Mail-Adresse">
+      <input type="password" id="globalAuthPassword" required minlength="8" autocomplete="current-password" placeholder="Passwort (mind. 8 Zeichen)" aria-label="Passwort">
       <div class="authbuttons"><button type="submit" class="btn primary" value="signin">Anmelden</button><button type="submit" class="btn" value="signup">Konto erstellen</button></div>
-    </form><span class="status" id="shopAuthStatus">Deine Daten bleiben privat und werden nur nach Anmeldung geladen.</span>
+    </form><span class="status" id="globalAuthStatus">Deine Inhalte werden nur nach Anmeldung geladen.</span>
   </div>`;
 }
 
@@ -524,25 +563,101 @@ function setSupabaseAssets(){
   };
 }
 
-async function loadCloudShop(){
-  if(!S.supabase || !S.authUser) return;
-  const {data,error}=await S.supabase.from("shopping_items").select("id,item").order("created_at",{ascending:true});
-  if(error){ S.shopLoaded=true; S.shop=[]; renderAll(); toast("Die Shoppingliste konnte nicht geladen werden."); return; }
-  S.shop=(data||[]).map(row=>({...row.item,id:row.id}));
-  S.shopLoaded=true; renderAll();
-}
 
-function initSupabaseShop(){
-  S.supabase=window.JAPAN_TOOL_SUPABASE;
-  S.supabase.auth.onAuthStateChange((_event,session)=>{
-    S.authUser=session?.user||null;
-    if(S.authUser){ setSupabaseAssets(); setTimeout(()=>loadCloudShop().catch(()=>toast("Die Shoppingliste konnte nicht geladen werden.")),0); }
-    else {
-      S.shop=[]; S.shopLoaded=true; S.assets=null;
-      for(const url of S.photoUrls.values()) URL.revokeObjectURL(url);
-      S.photoUrls.clear(); S.shopEdit=null; S.shopPhotos=[];
-      renderAll();
+const legacyKey = x => [x?.de,x?.ro,x?.jp,x?.cat].map(norm).join("|");
+const legacyBucketKey = x => norm(x?.text);
+const legacyShopKey = x => norm(x?.name);
+const dataOnly = x => { const y={...(x||{})}; delete y.id; return y; };
+async function importLegacyRows(table, cloudRows, legacyRows, keyOf, defaults=[]){
+  const source = legacyRows.length ? legacyRows : (!cloudRows.length ? defaults : []);
+  const known = new Set(cloudRows.map(row=>keyOf(row.item)));
+  const pending=[];
+  for(const old of source){
+    const item=dataOnly(old), key=keyOf(item);
+    if(!key || known.has(key)) continue;
+    known.add(key); pending.push(item);
+  }
+  if(!pending.length) return cloudRows;
+  const {data,error}=await S.supabase.from(table).insert(pending.map(item=>({item}))).select("id,item");
+  if(error) throw error;
+  return [...cloudRows,...(data||[])];
+}
+async function prepareLegacyShopItem(old){
+  const item=dataOnly(old), saved=[];
+  for(const photo of photosOf(old)){
+    if(/^data:image\//.test(photo)){
+      const blob=await (await fetch(photo)).blob();
+      const asset=await S.assets.upload(await shrinkImage(blob));
+      saved.push(asset.id);
     }
+  }
+  item.photos=saved; item.photo=saved[0]||null;
+  return item;
+}
+async function loadCloudApp(){
+  if(!S.supabase || !S.authUser) return;
+  const userId=S.authUser.id;
+  S.appLoading=true; S.appLoadError=""; renderGlobalAuth();
+  try{
+    const [phraseRes,shopRes,bucketRes,settingsRes]=await Promise.all([
+      S.supabase.from("learning_items").select("id,item").order("created_at",{ascending:true}),
+      S.supabase.from("shopping_items").select("id,item").order("created_at",{ascending:true}),
+      S.supabase.from("bucket_items").select("id,item").order("created_at",{ascending:true}),
+      S.supabase.from("app_settings").select("value").eq("key","fx").maybeSingle()
+    ]);
+    for(const res of [phraseRes,shopRes,bucketRes,settingsRes]) if(res.error) throw res.error;
+    if(S.authUser?.id!==userId) return;
+    const legacyItems=ls.get("jp.items"), legacyShop=ls.get("jp.shop"), legacyBucket=ls.get("jp.bucket");
+    const phrases=await importLegacyRows("learning_items",phraseRes.data||[],Array.isArray(legacyItems)?legacyItems:[],legacyKey,FALLBACK.map((x,i)=>({...x,created:i,ok:0,miss:0})));
+    let shopping=shopRes.data||[];
+    const shopKnown=new Set(shopping.map(row=>legacyShopKey(row.item))), shopPending=[];
+    for(const old of Array.isArray(legacyShop)?legacyShop:[]){
+      const key=legacyShopKey(old); if(!key||shopKnown.has(key)) continue;
+      shopKnown.add(key); shopPending.push(await prepareLegacyShopItem(old));
+    }
+    if(shopPending.length){
+      const {data,error}=await S.supabase.from("shopping_items").insert(shopPending.map(item=>({item}))).select("id,item");
+      if(error) throw error; shopping=[...shopping,...(data||[])];
+    }
+    const bucket=await importLegacyRows("bucket_items",bucketRes.data||[],Array.isArray(legacyBucket)?legacyBucket:[],legacyBucketKey);
+    if(S.authUser?.id!==userId) return;
+    S.items=(phrases||[]).map(row=>({...row.item,id:row.id}));
+    S.shop=(shopping||[]).map(row=>({...row.item,id:row.id}));
+    S.bucket=(bucket||[]).map(row=>({...row.item,id:row.id}));
+    S.fx=settingsRes.data?.value||ls.get("jp.fx")||{...DEFAULT_FX};
+    if(!settingsRes.data){
+      const {error}=await S.supabase.from("app_settings").upsert({key:"fx",value:S.fx});
+      if(error) throw error;
+    }
+    try{ ["jp.items","jp.shop","jp.bucket","jp.fx"].forEach(key=>localStorage.removeItem(key)); }catch(_){ }
+    S.loaded=true; S.shopLoaded=true; S.bucketLoaded=true; S.appLoading=false; S.appLoadError="";
+    onData(); renderAll();
+  }catch(error){
+    if(S.authUser?.id!==userId) return;
+    S.appLoading=false; S.appLoadError="Prüfe deine Internetverbindung und versuche es noch einmal.";
+    renderGlobalAuth();
+  }
+}
+function clearCloudUser(){
+  S.items=[]; S.shop=[]; S.bucket=[]; S.loaded=false; S.shopLoaded=false; S.bucketLoaded=false;
+  S.appLoading=false; S.appLoadError=""; S.assets=null; S.shopEdit=null; S.shopPhotos=[];
+  S.deck=[]; S.idx=0; S.flipped=false; S.res={ok:0,miss:[]}; S.shopOpenSet.clear(); S.shopSel={};
+  firstData=true;
+  for(const url of S.photoUrls.values()) URL.revokeObjectURL(url);
+  S.photoUrls.clear(); S.photoLoads.clear();
+}
+function initSupabaseApp(){
+  S.supabase=window.JAPAN_TOOL_SUPABASE||null;
+  if(!S.supabase){ S.authReady=true; renderGlobalAuth(); return; }
+  renderGlobalAuth();
+  S.supabase.auth.onAuthStateChange((_event,session)=>{
+    const next=session?.user||null, changed=next?.id!==S.authUser?.id;
+    S.authReady=true; S.authUser=next;
+    if(next){
+      setSupabaseAssets();
+      if(changed){ clearCloudUser(); S.appLoading=true; setTimeout(()=>loadCloudApp(),0); }
+    } else if(changed || S.loaded || S.shopLoaded || S.bucketLoaded) clearCloudUser();
+    renderGlobalAuth();
   });
 }
 
@@ -570,21 +685,26 @@ const shopMissingPrice = () => S.shop.filter(i => !i.bought && !i.fixed && !isNu
 
 const shopStore = {
   async add(o){
-    if (S.supabase){ const {data,error}=await S.supabase.from("shopping_items").insert({item:o}).select("id").single(); if(error) throw error; o.id=data.id; S.shop.push(o); renderAll(); }
-    else if (S.db) await S.db.collection("shop").add(o);
-    else throw new Error("Bitte melde dich an, um deine Shopping-Liste zu speichern.");
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um deine Shopping-Liste zu speichern.");
+    const {data,error}=await S.supabase.from("shopping_items").insert({item:o}).select("id").single();
+    if(error) throw error; o.id=data.id; S.shop.push(o); renderAll();
   },
   async update(id, p){
-    if (S.supabase){ const next={...(shopById(id)||{}),...p}; delete next.id; const {error}=await S.supabase.from("shopping_items").update({item:next}).eq("id",id); if(error) throw error; Object.assign(shopById(id)||{},p); renderAll(); }
-    else if (S.db) await S.db.doc("shop/"+id).update(p);
-    else throw new Error("Bitte melde dich an, um deine Shopping-Liste zu speichern.");
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um deine Shopping-Liste zu speichern.");
+    const next={...(shopById(id)||{}),...p}; delete next.id;
+    const {error}=await S.supabase.from("shopping_items").update({item:next}).eq("id",id);
+    if(error) throw error; Object.assign(shopById(id)||{},p); renderAll();
   },
   async remove(id){
-    if (S.supabase){ const {error}=await S.supabase.from("shopping_items").delete().eq("id",id); if(error) throw error; S.shop=S.shop.filter(i=>i.id!==id); renderAll(); }
-    else if (S.db) await S.db.doc("shop/"+id).delete();
-    else throw new Error("Bitte melde dich an, um deine Shopping-Liste zu speichern.");
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um deine Shopping-Liste zu speichern.");
+    const {error}=await S.supabase.from("shopping_items").delete().eq("id",id);
+    if(error) throw error; S.shop=S.shop.filter(i=>i.id!==id); renderAll();
   },
-  async fx(v){ if (S.db) await S.db.doc("settings/fx").set(v); else { S.fx = v; ls.set("jp.fx", v); renderShop(); } },
+  async fx(v){
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um Einstellungen zu speichern.");
+    const {error}=await S.supabase.from("app_settings").upsert({key:"fx",value:v});
+    if(error) throw error; S.fx=v; renderShop();
+  },
 };
 
 async function shrinkImage(file){
@@ -672,10 +792,6 @@ function shopHints(){
 
 function renderShop(){
   if (!$("viewShop")) return;
-  renderShopAuth();
-  const protectedShop = !!S.supabase && !S.authUser;
-  $("shopContent").hidden = protectedShop;
-  if (protectedShop){ $("countShop").textContent = "0"; return; }
   $("countShop").textContent = S.shop.filter(i=>!i.bought).length;
   // Kurs
   $("fxBar").innerHTML = `<span>Kurs: <b>1 € = ${new Intl.NumberFormat("de-DE",{maximumFractionDigits:2}).format(S.fx.rate)} ¥</b></span>
@@ -1037,87 +1153,35 @@ function renderSuggest(){
 const store = {
   async add(o){
     o.created = Date.now(); o.ok = 0; o.miss = 0;
-    if (S.db) await S.db.collection("phrases").add(o);
-    else { o.id = "l" + Math.random().toString(36).slice(2,10); S.items.push(o); saveLocal(); onData(); }
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um Karteikarten zu speichern.");
+    const {data,error}=await S.supabase.from("learning_items").insert({item:o}).select("id").single();
+    if(error) throw error; o.id=data.id; S.items.push(o); onData();
   },
   async update(id, patch){
-    if (S.db) await S.db.doc("phrases/" + id).update(patch);
-    else { Object.assign(S.items.find(i=>i.id===id) || {}, patch); saveLocal(); onData(); }
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um Karteikarten zu speichern.");
+    const next={...(S.items.find(i=>i.id===id)||{}),...patch}; delete next.id;
+    const {error}=await S.supabase.from("learning_items").update({item:next}).eq("id",id);
+    if(error) throw error; Object.assign(S.items.find(i=>i.id===id)||{},patch); onData();
   },
   async remove(id){
-    if (S.db) await S.db.doc("phrases/" + id).delete();
-    else { S.items = S.items.filter(i=>i.id!==id); saveLocal(); onData(); }
+    if (!S.supabase || !S.authUser) throw new Error("Bitte melde dich an, um Karteikarten zu speichern.");
+    const {error}=await S.supabase.from("learning_items").delete().eq("id",id);
+    if(error) throw error; S.items=S.items.filter(i=>i.id!==id); onData();
   }
 };
-function saveLocal(){ ls.set("jp.items", S.items); }
+function saveLocal(){ /* Userdaten werden ausschließlich synchronisiert online gespeichert. */ }
 function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.t); toast.t=setTimeout(()=>t.hidden=true,3200); }
 async function safe(fn){ try{ await fn(); } catch(e){ toast(e?.code==="quota_exceeded" ? "Speicher voll. Lösche ein paar Einträge." : "Speichern hat nicht geklappt. Versuch es nochmal."); } }
 
 function startLocal(){
-  S.mode = "local";
-  let items = ls.get("jp.items");
-  if (!Array.isArray(items)) { items = FALLBACK.map((o,i)=>({...o,id:"l"+i,created:i,ok:0,miss:0})); }
-  S.items = items; S.loaded = true; onData();
-  $("status").textContent = "Gespeichert nur in diesem Browser.";
-  const sh = S.supabase ? [] : ls.get("jp.shop"); S.shop = Array.isArray(sh) ? sh : [];
-  const fx = ls.get("jp.fx"); if (fx && fx.rate > 0) S.fx = fx;
-  S.shopLoaded = !S.supabase;
-  const bk = ls.get("jp.bucket"); S.bucket = Array.isArray(bk) ? bk : [];
-  S.bucketLoaded = true;
-  renderAll();
+  S.authReady=true; S.appLoadError="Die sichere Cloud-Anmeldung ist nicht verfügbar."; renderGlobalAuth();
 }
 async function init(){
-  renderAll();
-  if (window.JAPAN_TOOL_SUPABASE){
-    S.supabase = window.JAPAN_TOOL_SUPABASE;
-    startLocal();
-    initSupabaseShop();
-    return;
-  }
-  const c = window.claude;
-  if (!c || typeof c.use !== "function") return startLocal();
-  c.use("sample").then(s => { S.sample = s; renderAI(); }).catch(() => {});
-  try {
-    const db = await c.use("db");
-    if (!db) return startLocal();
-    S.db = db; S.mode = "db";
-    db.collection("phrases").orderBy("created").onSnapshot(snap => {
-      S.items = snap.docs.map(d => ({id:d.id, ...d.data()}));
-      S.loaded = true; onData();
-    }, () => { S.db = null; startLocal(); });
-    db.collection("shop").orderBy("created").onSnapshot(snap => {
-      S.shop = snap.docs.map(d => ({id:d.id, ...d.data()}));
-      S.shopLoaded = true; renderAll();
-    }, () => { S.shopLoaded = true; renderAll(); });
-    db.collection("bucket").orderBy("created").onSnapshot(snap => {
-      S.bucket = snap.docs.map(d => ({id:d.id, ...d.data()}));
-      S.bucketLoaded = true; renderAll();
-    }, () => { S.bucketLoaded = true; renderAll(); });
-    let fxSeen = false;
-    db.doc("settings/fx").onSnapshot(s => {
-      const d = s.exists ? s.data() : null;
-      if (d && +d.rate > 0){
-        const prev = S.fx.updated || 0;
-        S.fx = {rate:+d.rate, date:d.date||"", updated:+d.updated||0, error:d.error||""};
-        if (fxSeen && S.fx.updated !== prev) toast("Kurs aktualisiert");
-      }
-      fxSeen = true;
-      renderShop();
-    }, () => { fxSeen = true; });
-    let researchSeen = false;
-    db.doc("settings/research").onSnapshot(s => {
-      const d = s.exists ? s.data() : null;
-      if (d){
-        const prev = S.research.updated || 0;
-        S.research = {updated:+d.updated||0, count:+d.count||0};
-        if (researchSeen && S.research.updated !== prev) toast(`Preise aktualisiert (${S.research.count} Items)`);
-      }
-      researchSeen = true;
-      renderShop();
-    }, () => {});
-    c.use("assets").then(a => { S.assets = a; renderShop(); }).catch(() => {});
-    $("status").textContent = "Wird online gespeichert und auf allen deinen Geräten synchronisiert.";
-  } catch(e){ startLocal(); }
+  if(!window.JAPAN_TOOL_SUPABASE) return startLocal();
+  S.supabase=window.JAPAN_TOOL_SUPABASE;
+  const c=window.claude;
+  if(c && typeof c.use==="function") c.use("sample").then(s=>{S.sample=s;renderAI();}).catch(()=>{});
+  initSupabaseApp();
 }
 
 /* ---------- Ableitungen ---------- */
@@ -1152,6 +1216,8 @@ function onData(){
 
 /* ---------- Render ---------- */
 function renderAll(){
+  renderGlobalAuth();
+  if(!S.supabase || !S.authReady || !S.authUser || S.appLoading || S.appLoadError) return;
   $("countAll").textContent = S.items.length;
   $("countShop").textContent = S.shop.filter(i=>!i.bought).length;
   $("tabCards").setAttribute("aria-pressed", S.view==="cards");
@@ -1349,7 +1415,8 @@ $("q").oninput = e => { S.q = e.target.value; renderList(); };
 $("addBtn").onclick = () => { S.editing="new"; renderList(); };
 
 document.addEventListener("click", e => {
-  if (e.target.closest("#shopSignOut")){ safe(async()=>{ const {error}=await S.supabase.auth.signOut(); if(error) throw error; }); return; }
+  if (e.target.closest("#globalSignOut")){ safe(async()=>{ const {error}=await S.supabase.auth.signOut(); if(error) throw error; }); return; }
+  if (e.target.closest("#retryCloudLoad")){ loadCloudApp(); return; }
   const chip = e.target.closest("[data-cat]");
   if (chip){ S.listCat = chip.dataset.cat; renderList(); return; }
   if (e.target.closest("a")) return;
@@ -1416,10 +1483,10 @@ document.addEventListener("change", e => {
   S.shopPhVer++; renderShop();
 });
 document.addEventListener("submit", e => {
-  if (e.target.id === "shopAuthForm"){
+  if (e.target.id === "globalAuthForm"){
     e.preventDefault();
-    const email=$("shopAuthEmail").value.trim(), password=$("shopAuthPassword").value;
-    const mode=e.submitter?.value||"signin", status=$("shopAuthStatus");
+    const email=$("globalAuthEmail").value.trim(), password=$("globalAuthPassword").value;
+    const mode=e.submitter?.value||"signin", status=$("globalAuthStatus");
     if(status) status.textContent=mode==="signup"?"Konto wird angelegt …":"Anmeldung läuft …";
     (async()=>{
       const result = mode==="signup"
@@ -1427,7 +1494,7 @@ document.addEventListener("submit", e => {
         : await S.supabase.auth.signInWithPassword({email,password});
       if(result.error) throw result.error;
       if(mode==="signup" && !result.data.session && status) status.textContent="Fast fertig: Bestätige deine E-Mail-Adresse über den Link, den Supabase dir schickt. Danach kannst du dich hier anmelden.";
-      else if(status) status.textContent="Angemeldet. Deine private Shoppingliste wird geladen …";
+      else if(status) status.textContent="Angemeldet. Deine privaten Daten werden geladen …";
     })().catch(err=>{ if(status) status.textContent=err.message||"Das hat nicht geklappt. Prüfe E-Mail und Passwort."; });
     return;
   }
@@ -1474,4 +1541,3 @@ init();
 </script>
 
 </body></html>
-
