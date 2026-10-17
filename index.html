@@ -776,7 +776,7 @@ function mktHtml(i){
   }).filter(Boolean).join("");
   const hasPrices=m&&(isNum(m.low)||isNum(m.good)||isNum(m.high));
   return `<div class="mkt">
-    <div class="mhead"><span class="lbl">Japan-Preisrecherche${m?.date?" · "+esc(fmtDate(m.date)):""}</span>${c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
+    <div class="mhead"><span class="lbl">Japan-Preisrecherche${m?.date?" · "+esc(fmtDate(m.date)):""}</span>${m&&m.qualityVersion!==2?`<span class="conf warn">Alte Recherche · bitte neu suchen</span>`:c?`<span class="conf ${c[1]}">${c[0]}</span>`:""}</div>
     ${busy?`<div class="status">Suche aktuelle japanische Angebote …</div>`:""}
     ${m?.referencePrice?.price?`<div class="mrow"><span class="mk">UVP / Referenzpreis laut Quelle</span><b>${fmtY(m.referencePrice.price)}</b></div>`:""}
     ${hasPrices?`
