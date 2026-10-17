@@ -311,7 +311,6 @@ input[type=file]{font-size:.85rem;max-width:100%}
   <section id="viewList" hidden>
     <div style="display:flex;flex-direction:column;gap:14px">
       <div id="suggest"></div>
-      <div id="aiSug"></div>
       <div id="vtBar"></div>
       <div class="listtop">
         <input type="search" id="q" placeholder="Suchen (Deutsch, Romaji oder Japanisch)" aria-label="Suchen">
@@ -416,7 +415,6 @@ const S = {
   deck: [], idx: 0, flipped:false, res:{ok:0, miss:[]},
   q:"", listCat:"Alle", editing:null, confirmDel:null,
   sug:null, sugSkip:new Set(ls.get("jp.skip")||[]), sugAdded:new Set(),
-  sample:null, aiBusy:false, aiErr:"", aiSugs:[],
   supabase:null, authUser:null, authReady:false, appLoading:false, appLoadError:"", photoUrls:new Map(), photoLoads:new Set(),
 };
 
@@ -1073,71 +1071,6 @@ async function vtGo(){
   S.vtBusy = false; renderVT();
 }
 
-/* ---------- Vorschläge von Claude ---------- */
-function renderAI(){
-  const box = $("aiSug");
-  if (!S.loaded){ box.innerHTML = ""; return; }
-  const list = S.aiSugs.filter(p => !haveP(p) && !S.sugSkip.has(p.ro));
-  box.innerHTML = `<div class="aibox">
-    <div class="aibar"><button class="btn" data-act="aiGen" ${S.aiBusy?"disabled":""}>${S.aiBusy?"Claude überlegt …":"✦ Neue Vorschläge von Claude"}</button>${S.aiErr?`<span class="status">${esc(S.aiErr)}</span>`:""}</div>
-    ${list.length ? `<div class="rows">${list.map(p => { const k = S.aiSugs.indexOf(p); return `
-      <div class="item">
-        <div class="de">${esc(p.de)}${p.ctx?`<div class="ctx">${esc(p.ctx)}</div>`:""}</div>
-        <div class="jpcol">${p.jp?`<span class="jp" lang="ja">${esc(p.jp)}</span>`:""}<span class="ro">${esc(p.ro)}</span></div>
-        <div class="meta"><span class="tag">${esc(p.cat)}</span><button class="mini" data-act="aiAdd" data-k="${k}">Hinzufügen</button><button class="mini danger" data-act="aiDrop" data-k="${k}">Verwerfen</button></div>
-      </div>`; }).join("")}</div><span class="status">Von Claude erzeugt. Kurz gegenlesen, bevor du es lernst.</span>` : ""}
-  </div>`;
-}
-async function aiGen(){
-  if (S.aiBusy) return;
-  S.aiBusy = true; S.aiErr = ""; renderAI();
-  if (!S.sample && window.claude && typeof window.claude.use === "function"){
-    try { S.sample = await window.claude.use("sample"); } catch(e){}
-  }
-  if (!S.sample){
-    S.aiBusy = false;
-    S.aiErr = "Claude-Vorschläge sind in dieser Ansicht gerade nicht verfügbar. Lade die Seite neu oder öffne sie in claude.ai.";
-    renderAI(); return;
-  }
-  const haveList = S.items.map(i => `- ${i.de} = ${i.ro}`).join("\n") || "(noch leer)";
-  const skipList = [...S.sugSkip].join(", ") || "(keine)";
-  const catList = [...new Set([...cats(), "Allgemein", "Begrüßungen", "Restaurant", "Shopping", "Unterwegs", "Hotel"])].join(", ");
-  const prompt = `Du hilfst einem deutschen Touristen, der bald nach Japan reist. Schlage 5 neue japanische Phrasen oder Wörter vor, die man als Tourist im Alltag wirklich sehr häufig braucht.
-
-Sie dürfen NICHT schon in seiner Liste stehen, auch keine bloßen Varianten davon:
-${haveList}
-
-Diese hat er bereits abgelehnt (nicht wieder vorschlagen): ${skipList}
-
-Regeln:
-- Korrektes, natürliches Japanisch in höflich-neutraler Standardform (desu/masu), außer bei festen Ausdrücken.
-- "de": kurze deutsche Bedeutung.
-- "ctx": ein kurzer deutscher Satz, wann man es benutzt, endet mit Punkt.
-- "ro": Hepburn-Romaji mit Längungszeichen (ō, ū), beginnt mit Großbuchstaben.
-- "jp": normale japanische Schreibweise (Kanji/Kana).
-- Endet "de" mit . ! oder ?, endet "ro" mit demselben Zeichen und "jp" mit 。 ！ oder ？. Einzelwörter ohne Satzzeichen.
-- "cat": genau eine von: ${catList}.
-
-Antworte nur mit JSON in dieser Form:
-{"phrases":[{"de":"","ctx":"","ro":"","jp":"","cat":""}]}`;
-  try {
-    const out = await S.sample.json(prompt, {cache:false});
-    const arr = Array.isArray(out) ? out : (out && Array.isArray(out.phrases) ? out.phrases : []);
-    const clean = arr.filter(p => p && p.de && p.ro).map(p => ({
-      de:String(p.de).trim(), ctx:String(p.ctx||"").trim(), ro:String(p.ro).trim(),
-      jp:String(p.jp||"").trim(), cat:String(p.cat||"Allgemein").trim()
-    })).filter(p => !haveP(p) && !S.sugSkip.has(p.ro));
-    S.aiSugs = clean;
-    if (!clean.length) S.aiErr = "Diesmal kam nichts Neues. Probier es nochmal.";
-  } catch(e){
-    const c = e && e.code;
-    S.aiErr = c==="rate_limited" ? "Gerade zu viele Anfragen. Warte kurz und probier es dann nochmal."
-      : c==="not_granted" ? "Claude-Vorschläge sind für diese Seite nicht erlaubt. Du kannst das in den Berechtigungen der Seite ändern."
-      : c==="cancelled" ? "" : "Das hat nicht geklappt. Probier es nochmal.";
-  }
-  S.aiBusy = false; renderAI();
-}
-
 /* ---------- Vorschläge ---------- */
 const haveP = p => S.sugAdded.has(p.ro) || S.items.some(i => (i.jp && norm(i.jp)===norm(p.jp)) || norm(i.ro)===norm(p.ro));
 const sugCands = () => POOL.filter(p => !haveP(p) && !S.sugSkip.has(p.ro));
@@ -1197,8 +1130,6 @@ function startLocal(){
 async function init(){
   if(!window.JAPAN_TOOL_SUPABASE) return startLocal();
   S.supabase=window.JAPAN_TOOL_SUPABASE;
-  const c=window.claude;
-  if(c && typeof c.use==="function") c.use("sample").then(s=>{S.sample=s;renderAI();}).catch(()=>{});
   initSupabaseApp();
 }
 
@@ -1313,7 +1244,7 @@ function renderCards(){
 }
 
 function renderList(){
-  renderSuggest(); renderAI(); renderVT();
+  renderSuggest(); renderVT();
   const cs = cats();
   if (S.listCat!=="Alle" && !cs.includes(S.listCat)) S.listCat="Alle";
   $("listChips").innerHTML = ["Alle",...cs].map(c=>`<button class="chipbtn" data-cat="${esc(c)}" aria-pressed="${c===S.listCat}">${esc(c)}</button>`).join("");
@@ -1457,7 +1388,6 @@ document.addEventListener("click", e => {
     case "delYes": S.confirmDel=null; safe(()=>store.remove(id)); break;
     case "sugAdd": { const p=S.sug; if(!p) break; S.sugAdded.add(p.ro); pickSug(p); renderList();
       safe(async()=>{ await store.add({de:p.de,ctx:p.ctx,ro:p.ro,jp:p.jp,cat:p.cat,note:"",ex:false}); toast("Hinzugefügt"); }); break; }
-    case "aiGen": aiGen(); break;
     case "vtGo": vtGo(); break;
     case "dragNoop": break;
     case "shopToggle": if (S.shopOpenSet.has(id)) S.shopOpenSet.delete(id); else S.shopOpenSet.add(id); saveOpen(); renderShop(); break;
@@ -1484,9 +1414,6 @@ document.addEventListener("click", e => {
     case "bucketDel": S.bucketDel=id; S.bucketEdit=null; renderBucket(); break;
     case "bucketDelNo": S.bucketDel=null; renderBucket(); break;
     case "bucketDelYes": S.bucketDel=null; safe(()=>bucketStore.remove(id)); break;
-    case "aiAdd": { const p = S.aiSugs[+b.dataset.k]; if(!p) break; S.sugAdded.add(p.ro); S.aiSugs = S.aiSugs.filter(x=>x!==p); renderAI();
-      safe(async()=>{ await store.add({de:p.de,ctx:p.ctx,ro:p.ro,jp:p.jp,cat:p.cat,note:"",ex:false}); toast("Hinzugefügt"); }); break; }
-    case "aiDrop": { const p = S.aiSugs[+b.dataset.k]; if(!p) break; S.sugSkip.add(p.ro); ls.set("jp.skip",[...S.sugSkip]); S.aiSugs = S.aiSugs.filter(x=>x!==p); renderAI(); break; }
     case "sugNext": pickSug(S.sug); renderSuggest(); break;
     case "sugSkip": if(S.sug){ S.sugSkip.add(S.sug.ro); ls.set("jp.skip",[...S.sugSkip]); pickSug(); renderSuggest(); } break;
   }
