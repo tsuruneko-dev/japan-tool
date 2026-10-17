@@ -632,6 +632,7 @@ async function loadCloudApp(){
     try{ ["jp.items","jp.shop","jp.bucket","jp.fx"].forEach(key=>localStorage.removeItem(key)); }catch(_){ }
     S.loaded=true; S.shopLoaded=true; S.bucketLoaded=true; S.appLoading=false; S.appLoadError="";
     onData(); renderAll();
+    void refreshFx();
   }catch(error){
     if(S.authUser?.id!==userId) return;
     S.appLoading=false; S.appLoadError="Prüfe deine Internetverbindung und versuche es noch einmal.";
@@ -649,6 +650,7 @@ function clearCloudUser(){
 function initSupabaseApp(){
   S.supabase=window.JAPAN_TOOL_SUPABASE||null;
   if(!S.supabase){ S.authReady=true; renderGlobalAuth(); return; }
+  if(!fxRefreshTimer) fxRefreshTimer=setInterval(()=>{ void refreshFx(); },6*60*60*1000);
   renderGlobalAuth();
   S.supabase.auth.onAuthStateChange((_event,session)=>{
     const next=session?.user||null, changed=next?.id!==S.authUser?.id;
@@ -678,9 +680,7 @@ async function hydrateShopPhotos(){
   }
 }
 
-/* Kurs: Artifact-Seiten haben kein Netzwerk nach draußen (fetch zu externen APIs geht hier nicht) –
-   deshalb kein echtes "live", sondern einfach der zuletzt eingetragene Stand. Neu eintragen: im Chat
-   mit Claude fragen ("aktualisiere den Kurs"), dann wird er direkt in settings/fx geschrieben. */
+/* Der zuletzt veröffentlichte EUR/JPY-Tageskurs wird beim Laden und danach regelmäßig aktualisiert. */
 const shopMissingPrice = () => S.shop.filter(i => !i.bought && !i.fixed && !isNum(i.price)).map(i => i.name);
 
 const shopStore = {
@@ -706,6 +706,23 @@ const shopStore = {
     if(error) throw error; S.fx=v; renderShop();
   },
 };
+
+const FX_API = "https://api.frankfurter.dev/v2/rate/EUR/JPY";
+let fxRefreshTimer = null;
+async function refreshFx(){
+  if(!S.supabase || !S.authUser || !S.shopLoaded) return;
+  const userId=S.authUser.id, controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),8000);
+  try{
+    const response=await fetch(FX_API,{cache:"no-store",signal:controller.signal});
+    if(!response.ok) return;
+    const quote=await response.json(), rate=Number(quote.rate);
+    if(!quote.date || !Number.isFinite(rate) || rate<=0 || S.authUser?.id!==userId) return;
+    if(S.fx?.date===quote.date && S.fx?.rate===rate) return;
+    await shopStore.fx({rate,date:quote.date});
+  }catch(_){ /* Der zuletzt gespeicherte Kurs bleibt bei Netzwerkausfall erhalten. */ }
+  finally{ clearTimeout(timeout); }
+}
 
 async function shrinkImage(file){
   const url = URL.createObjectURL(file);
@@ -794,7 +811,7 @@ function renderShop(){
   if (!$("viewShop")) return;
   $("countShop").textContent = S.shop.filter(i=>!i.bought).length;
   // Kurs
-  $("fxBar").innerHTML = `<span>Kurs: <b>1 € = ${new Intl.NumberFormat("de-DE",{maximumFractionDigits:2}).format(S.fx.rate)} ¥</b></span>
+  $("fxBar").innerHTML = `<span>Tageskurs: <b>1 € = ${new Intl.NumberFormat("de-DE",{maximumFractionDigits:2}).format(S.fx.rate)} ¥</b></span>
     <span class="status">Stand ${esc(fmtDate(S.fx.updated||S.fx.date))||"nie"}</span>`;
   // Übersicht
   const open = S.shop.filter(i => !i.bought);
