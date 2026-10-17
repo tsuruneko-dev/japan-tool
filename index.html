@@ -782,9 +782,14 @@ function mktHtml(i){
     ${m?.shop?`<div class="mrow"><span class="mk">Aktuell angeboten</span><span>${esc(m.shop)}</span></div>`:""}
     ${m?.sold?`<div class="mrow"><span class="mk">Abgeschlossene Verkäufe</span><span>${esc(m.sold)}</span></div>`:""}
     ${hasPrices?`
-      <div class="mrow"><span class="mk">${m.priceBasis==="sold"?"Niedrigster passender Verkauf":"Günstigstes aktuelles Angebot"}</span><b>${fmtY(m.low)}</b></div>
-      <div class="mrow"><span class="mk">${m.priceBasis==="sold"?"Höchster passender Verkauf":"Teures aktuelles Angebot"}</span><b>${fmtY(m.high)}</b></div>
-      <div class="mrow"><span class="mk">Guter Kaufpreis · Richtwert</span><b>${fmtY(m.good)}</b></div>
+      ${m.soldMetric==="average"?`
+        <div class="mrow"><span class="mk">Durchschnitt abgeschlossener Verkäufe</span><b>${fmtY(m.good)}</b></div>
+        <div class="mrow"><span class="mk">Guter Kaufpreis · Richtwert</span><b>${fmtY(m.good)}</b></div>
+      `:`
+        <div class="mrow"><span class="mk">${m.priceBasis==="sold"?"Niedrigster passender Verkauf":"Günstigstes aktuelles Angebot"}</span><b>${fmtY(m.low)}</b></div>
+        <div class="mrow"><span class="mk">${m.priceBasis==="sold"?"Höchster passender Verkauf":"Teures aktuelles Angebot"}</span><b>${fmtY(m.high)}</b></div>
+        <div class="mrow"><span class="mk">Guter Kaufpreis · Richtwert</span><b>${fmtY(m.good)}</b></div>
+      `}
       ${m.note?`<div class="mhint">${esc(m.note)}</div>`:""}
     `:m?.shop||m?.sold||m?.note?`
       ${m.shop?`<div class="mrow"><span class="mk">Im Laden</span><span>${esc(m.shop)}</span></div>`:""}
