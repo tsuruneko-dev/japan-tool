@@ -310,7 +310,6 @@ input[type=file]{font-size:.85rem;max-width:100%}
 
   <section id="viewList" hidden>
     <div style="display:flex;flex-direction:column;gap:14px">
-      <div id="suggest"></div>
       <div id="vtBar"></div>
       <div class="listtop">
         <input type="search" id="q" placeholder="Suchen (Deutsch, Romaji oder Japanisch)" aria-label="Suchen">
@@ -1244,7 +1243,7 @@ function renderCards(){
 }
 
 function renderList(){
-  renderSuggest(); renderVT();
+  renderVT();
   const cs = cats();
   if (S.listCat!=="Alle" && !cs.includes(S.listCat)) S.listCat="Alle";
   $("listChips").innerHTML = ["Alle",...cs].map(c=>`<button class="chipbtn" data-cat="${esc(c)}" aria-pressed="${c===S.listCat}">${esc(c)}</button>`).join("");
